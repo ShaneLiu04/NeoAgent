@@ -29,12 +29,16 @@ def _resolve_safe(relative_path: str, must_exist: bool = False) -> Path:
     cfg = get_config()
     base = cfg.office_dir.resolve()
 
-    # Clean the path: strip leading slashes, normalize
-    cleaned = relative_path.lstrip("/").lstrip("\\").lstrip(".")
-    while cleaned.startswith("/") or cleaned.startswith("\\"):
-        cleaned = cleaned[1:]
+    candidate = Path(relative_path)
+    if candidate.is_absolute():
+        target = candidate.resolve()
+    else:
+        # Clean the path: strip leading slashes, normalize
+        cleaned = relative_path.lstrip("/").lstrip("\\").lstrip(".")
+        while cleaned.startswith("/") or cleaned.startswith("\\"):
+            cleaned = cleaned[1:]
 
-    target = (base / cleaned).resolve()
+        target = (base / cleaned).resolve()
 
     # Confinement check using resolved (dereferenced) paths.
     # Uses Path.is_relative_to() rather than str.startswith() to prevent

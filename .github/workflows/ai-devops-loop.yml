@@ -23,6 +23,11 @@ jobs:
       - name: Install linter & test runner (control plane itself needs no third-party packages)
         run: pip install pytest ruff pyyaml
 
+      - name: Materialize local governance scaffold (AGENTS.md is kept local-only)
+        env:
+          PYTHONPATH: .
+        run: python -m neoagent.cli.devops_cli scaffold --apply
+
       - name: Quality gates (lint · tests · privacy DLP)
         env:
           PYTHONPATH: .
