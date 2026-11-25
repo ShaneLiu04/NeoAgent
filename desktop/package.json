@@ -1,0 +1,29 @@
+{
+  "name": "neoagent-studio-desktop",
+  "version": "3.5.0",
+  "description": "NeoAgent Studio — Agentic engineering desktop app: reasoning-action harness, closed-loop delivery and Harness L1-L7 governance",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "io.neoagent.studio",
+    "productName": "NeoAgent Studio",
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../neoagent",
+        "to": "neoagent"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0"
+  }
+}

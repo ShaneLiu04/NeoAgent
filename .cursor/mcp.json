@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "neoagent-devops": {
+      "command": "python",
+      "args": ["-m", "neoagent.mcp.server", "--root", "."],
+      "env": {
+        "PYTHONPATH": "."
+      }
+    }
+  }
+}

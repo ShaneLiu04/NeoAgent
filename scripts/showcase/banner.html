@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>NeoAgent Studio — banner</title>
+<style>
+  html, body { margin: 0; width: 1280px; height: 400px; overflow: hidden; }
+  body {
+    font-family: -apple-system, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background:
+      radial-gradient(620px 380px at 12% 18%, rgba(94, 231, 255, 0.20), transparent 70%),
+      radial-gradient(680px 420px at 92% 110%, rgba(227, 123, 255, 0.22), transparent 70%),
+      radial-gradient(520px 320px at 60% -20%, rgba(124, 131, 255, 0.28), transparent 70%),
+      linear-gradient(160deg, #0b0c14 0%, #10111c 55%, #0b0b12 100%);
+    color: #f5f5f7;
+    display: flex; align-items: center;
+    position: relative;
+  }
+  .grid {
+    position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(800px 380px at 30% 50%, #000 30%, transparent 75%);
+  }
+  .wrap { position: relative; display: flex; align-items: center; gap: 44px; padding: 0 84px; }
+  .logo { width: 196px; height: 196px; filter: drop-shadow(0 24px 48px rgba(124, 131, 255, 0.35)); }
+  .eyebrow {
+    font-size: 15px; letter-spacing: 0.24em; text-transform: uppercase; font-weight: 600;
+    color: rgba(235, 235, 245, 0.55); margin-bottom: 10px;
+  }
+  h1 { margin: 0; font-size: 76px; font-weight: 700; letter-spacing: -0.035em; line-height: 1; }
+  h1 .studio {
+    background: linear-gradient(90deg, #5ee7ff, #7c83ff 50%, #e37bff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-weight: 600;
+  }
+  .tag { margin-top: 16px; font-size: 24px; color: rgba(235, 235, 245, 0.82); letter-spacing: -0.01em; }
+  .chips { display: flex; gap: 10px; margin-top: 26px; }
+  .chip {
+    font-size: 14px; font-weight: 600; padding: 7px 14px; border-radius: 999px;
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+    color: rgba(245,245,247,0.9); backdrop-filter: blur(12px);
+  }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="wrap">
+    <img class="logo" src="../../neoagent/desktop/static/logo.svg" alt="" />
+    <div>
+      <div class="eyebrow">Agentic Engineering · Governed</div>
+      <h1>NeoAgent <span class="studio">Studio</span></h1>
+      <div class="tag">从一句需求到金丝雀上线：可审计、可自愈、可演进的 AI 交付闭环</div>
+      <div class="chips">
+        <span class="chip">Harness L1–L7</span>
+        <span class="chip">DeepSeek 推理-行动</span>
+        <span class="chip">渐进式技能库</span>
+        <span class="chip">CLI × Studio</span>
+        <span class="chip">DLP 零泄露</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

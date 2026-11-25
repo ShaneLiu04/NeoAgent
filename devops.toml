@@ -1,0 +1,50 @@
+[project]
+base_branch = "main"
+
+[budget]
+max_review_rounds = 3
+max_pipeline_fixes = 3
+max_minor_findings = 10
+minor_density_lines = 200
+
+[privacy]
+enabled = true
+redact_llm_prompts = true
+block_workstation_paths = true
+block_internal_urls = true
+blocked_terms = []
+
+[skills]
+auto_recommend = true
+checklist_path = ".bug-patterns/checklist.md"
+auto_evolve_checklist = true
+
+[pipeline]
+coverage_min = 0
+max_flaky = 0
+
+[[pipeline.steps]]
+name = "ruff-lint"
+cmd = ["python", "-m", "ruff", "check", "neoagent"]
+
+[[pipeline.steps]]
+name = "pytest-suite"
+cmd = ["python", "-m", "pytest", "tests", "-q"]
+retries = 1
+
+[release]
+stages = [[5, 60], [25, 120], [100, 300]]
+deploy_cmd = ""
+rollback_cmd = ""
+metrics_cmd = ""
+
+[release.health]
+min_requests = 200
+max_error_rate = 0.01
+error_rate_ratio = 2.0
+p95_ratio = 1.3
+
+[feedback]
+cluster_threshold = 0.3
+hotfix_min_reach = 3
+max_spawned_iterations = 5

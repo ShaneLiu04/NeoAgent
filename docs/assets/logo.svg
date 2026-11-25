@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NeoAgent Studio">
+  <defs>
+    <linearGradient id="na-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B1F2E"/>
+      <stop offset="0.55" stop-color="#0E1018"/>
+      <stop offset="1" stop-color="#05060A"/>
+    </linearGradient>
+    <radialGradient id="na-halo" cx="0.3" cy="0.18" r="0.9">
+      <stop offset="0" stop-color="#6E7BFF" stop-opacity="0.38"/>
+      <stop offset="0.45" stop-color="#6E7BFF" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#6E7BFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="na-mark" x1="0.12" y1="0.9" x2="0.88" y2="0.1">
+      <stop offset="0" stop-color="#5EE7FF"/>
+      <stop offset="0.5" stop-color="#7C83FF"/>
+      <stop offset="1" stop-color="#E37BFF"/>
+    </linearGradient>
+    <linearGradient id="na-orbit" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.08"/>
+    </linearGradient>
+    <linearGradient id="na-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.02"/>
+    </linearGradient>
+    <filter id="na-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- iOS-style continuous-corner squircle -->
+  <path d="M256 8C50 8 8 50 8 256s42 248 248 248 248-42 248-248S462 8 256 8Z" fill="url(#na-bg)"/>
+  <path d="M256 8C50 8 8 50 8 256s42 248 248 248 248-42 248-248S462 8 256 8Z" fill="url(#na-halo)"/>
+  <path d="M256 10.5C52 10.5 10.5 52 10.5 256S52 501.5 256 501.5 501.5 460 501.5 256 460 10.5 256 10.5Z"
+        fill="none" stroke="url(#na-rim)" stroke-width="3"/>
+
+  <!-- Agent orbit: the closed delivery loop -->
+  <ellipse cx="256" cy="262" rx="196" ry="86" fill="none" stroke="url(#na-orbit)" stroke-width="6"
+           transform="rotate(-24 256 262)"/>
+
+  <!-- Monogram N: one continuous stroke, rounded joins -->
+  <path d="M168 350V170L344 342V162" fill="none" stroke="url(#na-mark)" stroke-width="58"
+        stroke-linecap="round" stroke-linejoin="round" filter="url(#na-glow)"/>
+
+  <!-- Orbiting agent node -->
+  <circle cx="418" cy="165" r="30" fill="#FFFFFF" fill-opacity="0.12"/>
+  <circle cx="418" cy="165" r="17" fill="#FFFFFF"/>
+</svg>

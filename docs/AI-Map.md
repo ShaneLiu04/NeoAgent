@@ -1,0 +1,21 @@
+---
+type: ProjectMap
+title: AI-Map
+description: Top-level index of specs, active changes, architecture, and engineering knowledge.
+---
+# AI-Map — NeoAgent v3.5 Documentation Index
+
+> Linked from `AGENTS.md` (schema layer).
+
+## 1. Architecture (`docs/architecture/` & `docs/`)
+- [`docs/ARCHITECTURE_DEVOPS.md`](ARCHITECTURE_DEVOPS.md) — NeoAgent Studio × DeepSeek Harness L1–L7 & Closed-Loop DevOps System Design
+
+## 2. Module Baselines (`docs/specs/features/`)
+- Baseline feature specifications live under `docs/specs/features/<module>/`.
+
+## 3. Active Incremental Changes (`docs/changes/`)
+- Iteration work-in-progress specs live under `docs/changes/YYYYMM/<feature>/`.
+
+## 4. Engineering Knowledge & Cases (`docs/knowledges/`)
+- Domain guides: `docs/knowledges/domains/`
+- Historical defect & incident cases: [`docs/knowledges/cases/index.md`](knowledges/cases/index.md)

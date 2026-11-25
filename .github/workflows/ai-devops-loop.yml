@@ -1,0 +1,52 @@
+name: NeoAgent AI DevOps Closed Loop
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  devops-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install linter & test runner (control plane itself needs no third-party packages)
+        run: pip install pytest ruff pyyaml
+
+      - name: Quality gates (lint · tests · privacy DLP)
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m ruff check neoagent tests
+          python -m pytest tests -q
+          python -m neoagent.cli.devops_cli privacy-scan
+
+      - name: Initialize & Execute AI DevOps Review + CI Gates
+        env:
+          PYTHONPATH: .
+        run: |
+          python -m neoagent.cli.devops_cli init
+          python -m neoagent.cli.devops_cli harness-audit
+          LOOP_JSON=$(python -m neoagent.cli.devops_cli --json new "CI Gate ${GITHUB_SHA::8}" --from-git --mode unattended)
+          LOOP_ID=$(python -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$LOOP_JSON")
+          python -m neoagent.cli.devops_cli build "$LOOP_ID"
+          python -m neoagent.cli.devops_cli review "$LOOP_ID" --reviewers static
+          python -m neoagent.cli.devops_cli pipeline "$LOOP_ID"
+          python -m neoagent.cli.devops_cli verify-ledger
+
+      - name: Upload SARIF 2.1.0 Findings to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        continue-on-error: true
+        with:
+          sarif_file: .neoagent-devops/artifacts

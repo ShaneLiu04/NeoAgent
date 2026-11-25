@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>NeoAgent Studio</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Inline SF-Symbols-style icon sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-compose" viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></symbol>
+    <symbol id="i-loop" viewBox="0 0 24 24"><path d="M7.5 8.5c-2 0-3.5 1.6-3.5 3.5s1.5 3.5 3.5 3.5c3.5 0 5.5-7 9-7 2 0 3.5 1.6 3.5 3.5s-1.5 3.5-3.5 3.5c-3.5 0-5.5-7-9-7z"/></symbol>
+    <symbol id="i-skills" viewBox="0 0 24 24"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H10v16H5.5A1.5 1.5 0 0 1 4 18.5v-13z"/><path d="M10 4h4.5L20 6.5 16 20h-6"/><path d="M6.5 8h1.5M6.5 11h1.5"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 12.5l9 5 9-5"/><path d="M3 16.5l9 5 9-5"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6l8-3z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5v-10z"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 3h8l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5h5"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-review" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2M8.5 11l2 2 3.5-3.5"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2.5"/><path d="M9.5 2.5v3M14.5 2.5v3M9.5 18.5v3M14.5 18.5v3M2.5 9.5h3M2.5 14.5h3M18.5 9.5h3M18.5 14.5h3"/></symbol>
+    <symbol id="i-rocket" viewBox="0 0 24 24"><path d="M14 4c3.5 0 6 2.5 6 6-2 1-4 3-6.5 5.5L8.5 10.5C11 8 13 6 14 4z"/><path d="M8.5 10.5L5 11l-2 3 4.5.5M13.5 15.5L13 19l-3 2-.5-4.5M6 18c-1 0-2 1-2 2 1 0 2-1 2-2z"/></symbol>
+  </svg>
+
+  <div class="app">
+    <!-- ═══ Sidebar ═══ -->
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="/logo.svg" class="brand-mark" alt="" />
+        <div class="brand-text">
+          <div class="brand-name">NeoAgent <span>Studio</span></div>
+          <div class="brand-sub" id="hdr-version">Agentic Engineering</div>
+        </div>
+        <button class="icon-btn" id="btn-theme" title="切换外观">
+          <svg class="ic"><use href="#i-moon" /></svg>
+        </button>
+      </div>
+
+      <div class="ws-card">
+        <div class="ws-row">
+          <svg class="ic ic-muted"><use href="#i-folder" /></svg>
+          <div class="ws-name" id="ws-name">—</div>
+          <span class="tag mono" id="ws-branch"><svg class="ic ic-xs"><use href="#i-branch" /></svg>main</span>
+        </div>
+        <div class="ws-row ws-meta">
+          <span class="status-dot" id="ws-llm-dot"></span>
+          <span id="ws-llm">本地 Harness 引擎</span>
+          <span class="dot-sep">·</span>
+          <span id="ws-skills">0 技能</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-tab="compose">
+          <svg class="ic"><use href="#i-compose" /></svg><span>Agent 会话</span>
+        </button>
+        <button class="nav-item" data-tab="loops">
+          <svg class="ic"><use href="#i-loop" /></svg><span>交付闭环</span>
+          <span class="nav-badge hidden" id="nav-active-loops">0</span>
+        </button>
+        <button class="nav-item" data-tab="skills">
+          <svg class="ic"><use href="#i-skills" /></svg><span>技能库</span>
+        </button>
+        <button class="nav-item" data-tab="harness">
+          <svg class="ic"><use href="#i-layers" /></svg><span>Harness 治理</span>
+        </button>
+        <button class="nav-item" data-tab="insights">
+          <svg class="ic"><use href="#i-chart" /></svg><span>效能与合规</span>
+        </button>
+      </nav>
+
+      <div class="section-hdr">
+        <span>最近闭环</span>
+        <button class="icon-btn sm" id="btn-quick-new-loop" title="新建闭环">
+          <svg class="ic"><use href="#i-plus" /></svg>
+        </button>
+      </div>
+      <div class="loop-list" id="rail-loops"></div>
+
+      <div class="sidebar-foot">
+        <svg class="ic ic-xs"><use href="#i-shield" /></svg>
+        <span>出站 DLP 脱敏 · 哈希链审计</span>
+      </div>
+    </aside>
+
+    <!-- ═══ Main ═══ -->
+    <main class="main">
+      <!-- Compose -->
+      <section class="view active" id="view-compose">
+        <header class="toolbar">
+          <div>
+            <h1>Agent 会话</h1>
+            <p class="subtitle">推理-行动 Harness · 思维链折叠 · 渐进式技能注入 · 工具并发</p>
+          </div>
+          <div class="seg" id="role-seg">
+            <button class="seg-item active" data-role="architect">架构师</button>
+            <button class="seg-item" data-role="coder">编码</button>
+            <button class="seg-item" data-role="reviewer">评审</button>
+            <button class="seg-item" data-role="security_auditor">安全</button>
+          </div>
+        </header>
+
+        <div class="chat-scroll" id="chat-scroll">
+          <div class="hero" id="chat-hero">
+            <img src="/logo.svg" class="hero-mark" alt="" />
+            <h2>今天想交付什么？</h2>
+            <p>描述任务、粘贴报错或请求代码检视。NeoAgent 会先推理、再调用工具，并全程遵守 Harness 七层约束。</p>
+            <div class="suggest-grid">
+              <button class="suggest" data-prompt="检视当前 Git Diff 的安全与代码规范问题">
+                <svg class="ic"><use href="#i-review" /></svg>
+                <div><strong>检视当前改动</strong><span>静态 / AST / 反作弊 / DLP 多维扫描</span></div>
+              </button>
+              <button class="suggest" data-prompt="为 Python 后端接口开发推荐适用的工程技能">
+                <svg class="ic"><use href="#i-skills" /></svg>
+                <div><strong>推荐工程技能</strong><span>按阶段与语言路由 SKILL.md</span></div>
+              </button>
+              <button class="suggest" data-prompt="检查当前仓库的 Harness L1-L7 与隐私合规状态">
+                <svg class="ic"><use href="#i-layers" /></svg>
+                <div><strong>诊断七层架构</strong><span>L1 信息边界 → L7 自演进健康度</span></div>
+              </button>
+              <button class="suggest" data-goto="loops">
+                <svg class="ic"><use href="#i-loop" /></svg>
+                <div><strong>启动交付闭环</strong><span>编码 → 检视 → CI → 金丝雀 → 反馈</span></div>
+              </button>
+            </div>
+          </div>
+          <div class="feed" id="chat-feed"></div>
+        </div>
+
+        <form class="composer" id="chat-form">
+          <textarea id="chat-input" rows="1" placeholder="向 NeoAgent 描述你的任务…"></textarea>
+          <div class="composer-bar">
+            <span class="chip" id="chip-model"><svg class="ic ic-xs"><use href="#i-cpu" /></svg><span id="chip-model-text">deepseek</span></span>
+            <span class="chip chip-ok"><svg class="ic ic-xs"><use href="#i-shield" /></svg>DLP 已开启</span>
+            <span class="chip" id="chip-ctx">上下文 1%</span>
+            <button type="submit" class="send-btn" id="chat-send" title="发送 (Enter)">
+              <svg class="ic"><use href="#i-arrow-up" /></svg>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Loops -->
+      <section class="view" id="view-loops">
+        <header class="toolbar">
+          <div>
+            <h1>交付闭环</h1>
+            <p class="subtitle">生成者 / 评审者隔离 · 反测试弱化 · CI 三分类诊断 · 金丝雀自动回滚 · 反馈派生迭代</p>
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn" id="btn-init-devops">初始化账本</button>
+            <button class="btn btn-primary" id="btn-open-new-modal">
+              <svg class="ic ic-xs"><use href="#i-plus" /></svg>新建闭环
+            </button>
+          </div>
+        </header>
+
+        <div class="scroll-body">
+          <div class="empty-state" id="loop-empty">
+            <svg class="ic ic-xl"><use href="#i-loop" /></svg>
+            <h3>还没有交付闭环</h3>
+            <p>新建一个闭环，NeoAgent 会从编码一路推进到金丝雀发布与用户反馈。</p>
+            <button class="btn btn-primary" data-open-sheet>新建闭环</button>
+          </div>
+
+          <div id="loop-detail" class="hidden">
+            <div class="card loop-head">
+              <div class="loop-head-top">
+                <div>
+                  <div class="mono muted small" id="ld-id">LOOP</div>
+                  <h2 id="ld-title">—</h2>
+                </div>
+                <span id="ld-tier"></span>
+              </div>
+              <div class="meta-row" id="ld-meta"></div>
+              <div class="stepper" id="stage-track"></div>
+            </div>
+
+            <div class="action-row" id="ld-actions">
+              <div class="seg seg-lg">
+                <button class="seg-item" data-laction="build">编码</button>
+                <button class="seg-item" data-laction="review">检视</button>
+                <button class="seg-item" data-laction="pipeline">流水线</button>
+                <button class="seg-item" data-laction="release">金丝雀发布</button>
+              </div>
+              <button class="btn btn-accent" data-laction="autopilot">
+                <svg class="ic ic-xs"><use href="#i-bolt" /></svg>Autopilot 全自动推进
+              </button>
+            </div>
+
+            <div class="activity hidden" id="ld-last-msg"></div>
+
+            <div class="group">
+              <div class="group-hdr">独立检视结果 <span class="muted">SARIF 2.1.0</span></div>
+              <div class="card list" id="ld-findings"></div>
+            </div>
+
+            <div class="split">
+              <div class="group">
+                <div class="group-hdr">人工门禁签署</div>
+                <div class="card approve-card">
+                  <input id="ap-by" type="text" value="tech-lead" placeholder="审批人" />
+                  <div class="btn-row">
+                    <button class="btn sm" data-approve="review">批准检视</button>
+                    <button class="btn sm" data-approve="release">批准发布</button>
+                    <button class="btn sm" data-approve="full_rollout">批准全量</button>
+                  </div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-hdr">线上反馈 → 自动派生迭代</div>
+                <div class="card fb-card">
+                  <textarea id="fb-input" rows="3" placeholder='每行一条 JSON，例如 {"text":"结算接口偶发 500","severity":"critical","reach":5}'></textarea>
+                  <button class="btn" id="btn-submit-feedback">分诊并派生子闭环</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Skills -->
+      <section class="view" id="view-skills">
+        <header class="toolbar">
+          <div>
+            <h1>技能库</h1>
+            <p class="subtitle">Tier 1 目录 → Tier 2 按需激活 SKILL.md → Tier 3 受限读取 references/</p>
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn" id="btn-validate-skills">
+              <svg class="ic ic-xs"><use href="#i-check" /></svg>F1–F4 合规校验
+            </button>
+          </div>
+        </header>
+        <div class="scroll-body">
+          <div class="filter-bar">
+            <label class="search">
+              <svg class="ic ic-muted"><use href="#i-search" /></svg>
+              <input id="sk-query" type="text" placeholder="搜索技能：review、security、tdd、debug…" />
+            </label>
+            <input id="sk-files" class="files-input" type="text" placeholder="涉及文件，如 service.py" />
+            <button class="btn btn-primary" id="btn-filter-skills">智能匹配</button>
+          </div>
+          <div class="chips-scroll" id="sk-stage">
+            <button class="pill-tab active" data-stage="">全部</button>
+            <button class="pill-tab" data-stage="intake">需求</button>
+            <button class="pill-tab" data-stage="build">编码</button>
+            <button class="pill-tab" data-stage="review">检视</button>
+            <button class="pill-tab" data-stage="pipeline">流水线</button>
+            <button class="pill-tab" data-stage="release">发布</button>
+            <button class="pill-tab" data-stage="observe">观测</button>
+            <button class="pill-tab" data-stage="learn">演进</button>
+          </div>
+          <div class="split split-skills">
+            <div class="card list scroll-pane" id="skills-list"></div>
+            <div class="card scroll-pane reader" id="skill-reader">
+              <div class="empty-inline">
+                <svg class="ic ic-xl"><use href="#i-skills" /></svg>
+                <p>选择左侧技能，按需激活其 Tier 2 正文与 Tier 3 参考规范。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Harness -->
+      <section class="view" id="view-harness">
+        <header class="toolbar">
+          <div>
+            <h1>Harness 治理</h1>
+            <p class="subtitle">信息边界 · 工具提炼 · 子代理门禁 · 40% 上下文 · 独立评估 · 机械约束 · SAFE 自演进</p>
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn" id="btn-diagnose-scaffold">L1 诊断</button>
+            <button class="btn btn-primary" id="btn-apply-scaffold">补齐四层文档骨架</button>
+          </div>
+        </header>
+        <div class="scroll-body">
+          <div class="layer-grid" id="harness-cards"></div>
+          <div class="group">
+            <div class="group-hdr">L7 自演进提案 <span class="muted">只追加 · 可回滚 · 结构性变更需人工确认</span></div>
+            <div class="card list" id="evo-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Insights -->
+      <section class="view" id="view-insights">
+        <header class="toolbar">
+          <div>
+            <h1>效能与合规</h1>
+            <p class="subtitle">DORA 四项指标 · AI 自治度 · SHA-256 哈希链账本 · 全仓 DLP 扫描</p>
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn" id="btn-refresh-metrics">刷新</button>
+            <button class="btn btn-primary" id="btn-scan-privacy">
+              <svg class="ic ic-xs"><use href="#i-shield" /></svg>全仓隐私扫描
+            </button>
+          </div>
+        </header>
+        <div class="scroll-body">
+          <div class="kpi-grid" id="metrics-cards"></div>
+          <div class="card privacy-card" id="privacy-scan-result">
+            <div class="privacy-icon"><svg class="ic ic-lg"><use href="#i-shield" /></svg></div>
+            <div>
+              <h3>DLP 隐私与可移植性扫描</h3>
+              <p class="muted">扫描全仓源码、配置与文档中的个人机器路径、内网地址、凭据与自定义敏感词。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ═══ Inspector ═══ -->
+    <aside class="inspector">
+      <div class="insp-card">
+        <div class="insp-title">上下文预算</div>
+        <div class="ring-wrap">
+          <svg viewBox="0 0 120 120" class="ring">
+            <circle cx="60" cy="60" r="50" class="ring-track" />
+            <circle cx="60" cy="60" r="50" class="ring-limit" />
+            <circle cx="60" cy="60" r="50" class="ring-fill" id="ctx-ring" />
+          </svg>
+          <div class="ring-center">
+            <div class="ring-pct" id="ctx-pct">1%</div>
+            <div class="ring-zone" id="ctx-zone">SMART</div>
+          </div>
+        </div>
+        <div class="ring-meta">
+          <span id="ctx-tokens">1,200 / 128,000 tok</span>
+          <span class="muted">红线 40%</span>
+        </div>
+      </div>
+
+      <div class="insp-card">
+        <div class="insp-title">L1 信息边界</div>
+        <div id="insp-boundary" class="insp-body muted">选择一个闭环以查看角色与红线</div>
+      </div>
+
+      <div class="insp-card">
+        <div class="insp-title">已激活技能</div>
+        <div id="insp-skills" class="chip-wrap"><span class="muted small">按阶段自动注入</span></div>
+      </div>
+
+      <div class="insp-card grow">
+        <div class="insp-title">交接产物</div>
+        <div id="insp-artifacts" class="artifact-list"><span class="muted small">暂无产物</span></div>
+        <pre id="insp-artifact-viewer" class="artifact-pre hidden"></pre>
+      </div>
+    </aside>
+  </div>
+
+  <!-- New Loop Sheet -->
+  <div class="sheet-backdrop hidden" id="new-loop-bar">
+    <div class="sheet">
+      <div class="sheet-grabber"></div>
+      <h3>新建交付闭环</h3>
+      <p class="muted small">NeoAgent 将自动定级风险、选择 SDD 轨道并挂载对应技能。</p>
+      <label class="field"><span>标题</span><input id="nl-title" type="text" placeholder="例如：Add apply_discount pricing calculation" /></label>
+      <label class="field"><span>涉及文件</span><input id="nl-files" type="text" placeholder="逗号分隔；留空则从 Git Diff 推断" /></label>
+      <div class="field">
+        <span>运行模式</span>
+        <div class="seg" id="nl-mode">
+          <button type="button" class="seg-item active" data-mode="attended">有人值守</button>
+          <button type="button" class="seg-item" data-mode="unattended">自治自愈</button>
+        </div>
+      </div>
+      <label class="switch-row">
+        <span>从 Git Diff 推断改动范围</span>
+        <input type="checkbox" id="nl-git" class="switch" checked />
+      </label>
+      <div class="sheet-actions">
+        <button class="btn" id="btn-cancel-loop" type="button">取消</button>
+        <button class="btn btn-primary" id="btn-create-loop" type="button">创建闭环</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
