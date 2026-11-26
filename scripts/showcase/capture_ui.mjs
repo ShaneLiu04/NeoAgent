@@ -105,6 +105,10 @@ try {
     await rec.frame(2800);
     rec.save();
     await still("05-loop-done");
+    // Governed Review Protocol card: verdict, attestation and attribution for the latest round.
+    await page.eval(`document.getElementById("ld-protocol-group")?.scrollIntoView({block: "center"})`);
+    await page.sleep(400);
+    await still("05-protocol");
   }
 
   // ── Scene 3: Skill library ───────────────────────────────────────────────────

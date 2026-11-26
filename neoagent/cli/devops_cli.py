@@ -70,6 +70,11 @@ def build_cli_parser() -> argparse.ArgumentParser:
     rev_p.add_argument("id")
     rev_p.add_argument("--reviewers", default="static", help="Comma-separated: static,neoagent")
     rev_p.add_argument("--diff-file", help="Read diff from file instead of git diff")
+    rev_p.add_argument(
+        "--deep",
+        action="store_true",
+        help="Deep audit: also scan whole touched files; old issues are filed as debt, not blockers",
+    )
 
     sub.add_parser("pipeline", help="Execute CI build/lint/test/coverage pipeline & gate").add_argument("id")
 
@@ -88,12 +93,27 @@ def build_cli_parser() -> argparse.ArgumentParser:
     auto_p.add_argument("--version", default="v0.1.0", dest="rel_version")
     auto_p.add_argument("--dry-run", action="store_true", default=False)
     auto_p.add_argument("--feedback", help="Optional post-release feedback file")
+    auto_p.add_argument("--deep", action="store_true", help="Deep security audit of touched files")
 
     waive_p = sub.add_parser("waive", help="Waive a specific finding with mandatory human sign-off & reason")
     waive_p.add_argument("id")
     waive_p.add_argument("finding")
     waive_p.add_argument("--by", required=True)
     waive_p.add_argument("--reason", required=True)
+
+    resp_p = sub.add_parser(
+        "respond", help="Dispute a review finding with evidence (it stays open and goes to a human)"
+    )
+    resp_p.add_argument("id")
+    resp_p.add_argument("finding")
+    resp_p.add_argument("--by", required=True)
+    resp_p.add_argument("--reason", required=True, help="Concrete evidence that refutes the finding")
+
+    rr_p = sub.add_parser("review-record", help="Show the audit record of a loop's latest review round")
+    rr_p.add_argument("id")
+    rr_p.add_argument("--round", type=int, default=0, help="Round number (default: latest)")
+
+    sub.add_parser("rules", help="List the review rule catalog (rule -> dimension -> standard)")
 
     app_p = sub.add_parser("approve", help="Record human approval at review / release / full_rollout")
     app_p.add_argument("id")
@@ -231,8 +251,25 @@ def _dispatch_command(args: argparse.Namespace, root: Path) -> int:
             f"Harness L1-L7 Audit: L1={status['layers']['L1_information_boundary']['status']} | "
             f"L6={l6['status']} (privacy_leaks={l6['privacy_violations_count']}, skills={l6['skills_f1_f4_compliant']})"
         )
+        l5 = status["layers"]["L5_independent_evaluation"]
+        human += f" | L5 isolated={l5['generator_evaluator_isolated']} (rounds attested={l5['attested_review_rounds']})"
         _emit(args, status, human)
-        return 0 if l6["privacy_violations_count"] == 0 else 2
+        clean = l6["privacy_violations_count"] == 0 and l5["generator_evaluator_isolated"] is not False
+        return 0 if clean else 2
+
+    if args.cmd == "rules":
+        from ..devops.review import CATALOG
+
+        rows = [
+            {"rule": s.id, "dimension": s.dimension, "standard": s.standard, "title": s.title,
+             "triage": s.triage, "rework": s.rework}
+            for s in CATALOG.values()
+        ]
+        human = "\n".join(
+            f"{r['rule']:<26} {r['dimension']:<15} {r['standard']:<28} {r['title']}" for r in rows
+        )
+        _emit(args, {"total": len(rows), "rules": rows}, human)
+        return 0
 
     if args.cmd == "privacy-scan":
         hits = scan_repository_privacy(root, cfg.privacy)
@@ -320,7 +357,10 @@ def _dispatch_command(args: argparse.Namespace, root: Path) -> int:
         bundle = eng.skills.build_context_bundle(loop.activated_skills)
         rev_names = [n.strip() for n in args.reviewers.split(",") if n.strip()]
         chain, warns = build_review_chain(
-            rev_names, skill_context=bundle, checklist_rel_path=cfg.skills.checklist_path
+            rev_names,
+            skill_context=bundle,
+            checklist_rel_path=cfg.skills.checklist_path,
+            deep=args.deep or cfg.review.deep_audit,
         )
         for w in warns:
             print(f"Warning: {w}", file=sys.stderr)
@@ -339,7 +379,10 @@ def _dispatch_command(args: argparse.Namespace, root: Path) -> int:
         bundle = eng.skills.build_context_bundle(loop.activated_skills)
         rev_names = [n.strip() for n in args.reviewers.split(",") if n.strip()]
         chain, _ = build_review_chain(
-            rev_names, skill_context=bundle, checklist_rel_path=cfg.skills.checklist_path
+            rev_names,
+            skill_context=bundle,
+            checklist_rel_path=cfg.skills.checklist_path,
+            deep=args.deep or cfg.review.deep_audit,
         )
         fb_items = load_feedback_file(Path(args.feedback)) if args.feedback else None
         res = eng.autopilot(
@@ -352,6 +395,19 @@ def _dispatch_command(args: argparse.Namespace, root: Path) -> int:
     elif args.cmd == "waive":
         eng.waive(loop, args.finding, args.by, args.reason)
         res = StepResult(0, loop.stage.value, f"Waived {args.finding} (by {args.by})")
+    elif args.cmd == "respond":
+        eng.respond(loop, args.finding, args.by, args.reason)
+        res = StepResult(0, loop.stage.value, f"Disputed {args.finding} (by {args.by}); routed to a human")
+    elif args.cmd == "review-record":
+        art = eng.ledger.artifact_dir(loop.id)
+        rounds = sorted(art.glob("review-record-r*.md"), key=lambda p: int(p.stem.rsplit("-r", 1)[1]))
+        if args.round:
+            rounds = [p for p in rounds if p.name == f"review-record-r{args.round}.md"]
+        if not rounds:
+            raise FileNotFoundError(f"No review record for {loop.id} yet — run `review` first")
+        text = rounds[-1].read_text(encoding="utf-8")
+        _emit(args, {"code": 0, "record": rounds[-1].name, "markdown": text}, text)
+        return 0
     elif args.cmd == "approve":
         res = eng.approve(loop, args.point, args.by, args.note)
     elif args.cmd == "resume":
@@ -360,8 +416,19 @@ def _dispatch_command(args: argparse.Namespace, root: Path) -> int:
         raise ValueError(f"Unknown command: {args.cmd}")
 
     _emit(args, res)
+    if not args.json and args.cmd == "review" and res.data.get("verdict"):
+        att = res.data.get("attribution", {})
+        print(
+            f"  Verdict: {res.data['verdict'].upper()}  |  introduced={att.get('introduced', 0)} "
+            f"carried_over={att.get('carried_over', 0)} fixed_by_change={att.get('fixed_by_change', 0)} "
+            f"debt={att.get('debt', 0)}  |  isolated={res.data['attestation'].get('isolated')}"
+        )
+        if res.data.get("review_record"):
+            print(f"  Review record: {res.data['review_record']}")
     if not args.json and res.code in (2, 4) and res.data.get("fix_brief"):
         print(f"  Fix brief written to: {res.data['fix_brief']}")
+    if not args.json and res.data.get("decision_brief"):
+        print(f"  Decision brief (needs an owner): {res.data['decision_brief']}")
     return res.code
 
 

@@ -145,6 +145,75 @@ def build_demo_workspace(base: Path | None = None) -> tuple[Path, Path]:
     return repo, skills_dir
 
 
+# ── Review-protocol scenario: a two-round review that shows attribution and escalation ──
+# Round 0 (committed baseline): sign() + a private legacy digest that is later removed.
+_AUTH_BASE = (
+    "import hashlib\n\n\n"
+    "def sign(payload: str) -> str:\n"
+    "    return hashlib.md5(payload.encode()).hexdigest()\n\n\n"
+    "def _legacy_digest(token: str) -> str:\n"
+    "    return hashlib.md5(token.encode()).hexdigest()\n"
+)
+# Round 1 (AI-written, uncommitted): sign() is only re-formatted (carried over, not blamed),
+# the legacy digest is removed (credited as fixed), and a new insecure reset code appears.
+_AUTH_ROUND1 = (
+    "import hashlib\nimport random\n\n\n"
+    "def sign(payload: str) -> str:\n"
+    "    return hashlib.md5( payload.encode() ).hexdigest()\n\n\n"
+    "def reset_code() -> str:\n"
+    "    code = random.randint(100000, 999999)\n"
+    "    return str(code)\n"
+)
+# Round 2 (after the repair): the reset code now uses `secrets`, but the repair also edits billing.
+_AUTH_ROUND2 = (
+    "import hashlib\nimport secrets\n\n\n"
+    "def sign(payload: str) -> str:\n"
+    "    return hashlib.md5( payload.encode() ).hexdigest()\n\n\n"
+    "def reset_code() -> str:\n"
+    "    code = secrets.randbelow(900000) + 100000\n"
+    "    return str(code)\n"
+)
+_BILLING_LIMITS = (
+    "MAX_COUPON_PCT = 100\n\n\n"
+    "def clamp_pct(value: float) -> float:\n"
+    "    return min(value, MAX_COUPON_PCT)\n"
+)
+
+
+def build_review_demo(base: Path) -> Path:
+    """Create the synthetic ``payment-gateway`` repo used by the review-protocol showcase."""
+    repo = base / DEMO_NAME
+    (repo / "svc").mkdir(parents=True, exist_ok=True)
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "dev@example.org")
+    _git(repo, "config", "user.name", "Demo Engineer")
+    (repo / ".gitignore").write_text(".neoagent-devops/\n__pycache__/\n", encoding="utf-8")
+    (repo / "svc" / "auth.py").write_text(_AUTH_BASE, encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Initial baseline")
+    # The AI-written change under review (uncommitted, like the flawed change of the closed-loop demo).
+    (repo / "svc" / "auth.py").write_text(_AUTH_ROUND1, encoding="utf-8")
+    return repo
+
+
+_AUTH_TEST = (
+    "from svc.auth import reset_code\n\n\n"
+    "def test_reset_code_is_six_digits():\n"
+    "    assert len(reset_code()) == 6\n"
+)
+
+
+def review_round2_edit(repo: Path) -> None:
+    """The scripted repair: fixes the finding and adds its test, but also touches an out-of-scope module."""
+    (repo / "svc" / "auth.py").write_text(_AUTH_ROUND2, encoding="utf-8")
+    (repo / "tests").mkdir(exist_ok=True)
+    (repo / "tests" / "test_auth.py").write_text(_AUTH_TEST, encoding="utf-8")
+    (repo / "billing").mkdir(exist_ok=True)
+    (repo / "billing" / "limits.py").write_text(_BILLING_LIMITS, encoding="utf-8")
+    # Stage only the code the change owns (not the untracked CLI-generated devops.toml).
+    _git(repo, "add", "svc", "tests", "billing")
+
+
 def feedback_jsonl() -> str:
     rows = [
         {"id": "fb-1", "text": "coupon above 100% crashes checkout with a 500 error", "severity": "critical", "version": "v0.1.0", "reach": 5},

@@ -1,19 +1,22 @@
-"""Three-Layer Hybrid Code Review Engine (Static AST + Bug-Patterns + Parallel Skill-LLM).
+"""Layered code review engine: deterministic floor + repository memory + parallel LLM review.
 
-Embodies core principles from ``devflow-review``, ``code-review``, ``secure-coding``,
-``python-coding-standards``, ``bug-pattern-checker``, and ``AI-DevOps-Loop``:
   1. Deterministic Floor (``StaticASTReviewer``): Regex + Python AST + DLP privacy
      analysis that runs in milliseconds with zero LLM dependency — catches leaked
      secrets (CWE-798), command/SQL injection (CWE-78/CWE-89), mutable default
-     arguments (PEP 8 / Python Gotchas), swallowed exceptions (CWE-390), CWE-22
-     path prefix bugs, workstation/internal-URL privacy leaks, and **AI test-weakening
-     cheats** (CRITICAL).
+     arguments, swallowed exceptions (CWE-390), CWE-22 path prefix bugs,
+     workstation/internal-URL privacy leaks, and **AI test-weakening cheats** (CRITICAL).
   2. Organizational Memory (``BugPatternReviewer``): Evaluates diffs against repository
      ``.bug-patterns/checklist.md`` and auto-evolves recurring root causes (Harness L7).
   3. Multi-Perspective AI Review (``SkillOrchestratedReviewer``): Spawns 3 isolated
      NeoAgent sub-agents (Correctness, Security, CleanCode) pre-loaded with matched
      ``SKILL.md`` standards, then enforces Clean-Code Minor/Info density control
      ``ceil(changed_lines / 200)``.
+
+Around these layers, :mod:`neoagent.devops.review` adds the governance that makes a review
+believable: change attribution, evidence grounding, independence attestation and routing.
+Reviewers declare how the protocol may treat them through four optional attributes:
+``deterministic`` (its silence is evidence), ``attributable`` (it can be re-run on the old code),
+``reads_worktree`` (it needs checked-out files) and ``context_inputs`` (what it was given).
 """
 
 from __future__ import annotations
@@ -222,6 +225,10 @@ class StaticASTReviewer:
     """Deterministic static + Python AST + DLP privacy + anti-test-weakening reviewer."""
 
     name = "static-ast"
+    deterministic = True
+    attributable = True
+    reads_worktree = True  # the AST pass reads modified .py files from the worktree
+    context_inputs = ("diff", "worktree_sources")
 
     def __init__(self, privacy_policy: Any = None) -> None:
         self.privacy_policy = privacy_policy
@@ -435,6 +442,10 @@ class BugPatternReviewer:
     """
 
     name = "bug-patterns"
+    deterministic = True
+    attributable = True
+    reads_worktree = False
+    context_inputs = ("diff", "repo_checklist")
 
     def __init__(self, checklist_rel_path: str = ".bug-patterns/checklist.md") -> None:
         self.checklist_rel_path = checklist_rel_path
@@ -548,11 +559,22 @@ REVIEW_PERSPECTIVES: dict[str, str] = {
     ),
 }
 
+_SKEPTIC_PREAMBLE = (
+    "Review like a skeptic: ask 'where does this code lie to its reader?'. Read error paths and "
+    "resource-release paths FIRST — defect density is highest there. Do not rationalise: a diff that "
+    "'only adds a field', 'is just a fix' or 'is a feature' can carry the same defect classes as any "
+    "other. Report only what THIS change introduces; ignore code it did not touch. Quote the exact "
+    "offending line in `evidence` — if you cannot quote it, do not report it."
+)
+
 _JSON_CONTRACT = (
     "Output ONLY a valid JSON array (no markdown prose). Each item MUST be:\n"
     '{"severity":"critical|major|minor|info","file":"path","line":1,"rule":"short-kebab-rule",'
+    '"evidence":"the exact offending line copied from the diff",'
+    '"standard":"CWE/OWASP/language rule if one applies, else empty",'
     '"message":"what is wrong","suggestion":"how to fix"}.\n'
-    "Output [] if there are no substantive defects. Report ONLY issues in added/modified diff lines."
+    "Output [] if there are no substantive defects. Report ONLY issues in added/modified diff lines; "
+    "findings whose evidence does not appear in the diff are discarded automatically."
 )
 
 
@@ -592,6 +614,8 @@ def parse_llm_findings(raw_text: str, source: str) -> list[Finding]:
                     line=ln,
                     source=source,
                     suggestion=str(item.get("suggestion") or "")[:300],
+                    evidence=str(item.get("evidence") or "").strip()[:200],
+                    standard=str(item.get("standard") or "").strip()[:60],
                 )
             )
         return parsed
@@ -624,6 +648,11 @@ class SkillOrchestratedReviewer:
     """Parallel multi-perspective reviewer powered by NeoAgent Orchestrator + SkillRegistry."""
 
     name = "neoagent-skills"
+    deterministic = False  # generative: its silence is not evidence
+    attributable = False
+    reads_worktree = False
+    #: Exactly what each sub-agent receives — never the author's conversation or reasoning.
+    context_inputs = ("diff", "skill_bundle")
 
     def __init__(
         self,
@@ -638,6 +667,8 @@ class SkillOrchestratedReviewer:
         self.timeout = timeout
         self._orchestrator = orchestrator
         self.skill_context = skill_context
+        #: Task ids of the fresh sub-agent sessions of the latest run (for the attestation).
+        self.session_ids: list[str] = []
 
     def _get_orchestrator(self) -> Any:
         if self._orchestrator is not None:
@@ -672,12 +703,16 @@ class SkillOrchestratedReviewer:
         tasks = [
             SubAgentTask(
                 id=f"review-{p}",
-                prompt=f"{REVIEW_PERSPECTIVES[p]}{skill_block}\n{_JSON_CONTRACT}\n\nDiff:\n{body}",
+                prompt=(
+                    f"{REVIEW_PERSPECTIVES[p]}\n{_SKEPTIC_PREAMBLE}{skill_block}\n"
+                    f"{_JSON_CONTRACT}\n\nDiff:\n{body}"
+                ),
                 role=SubAgentRole.REVIEWER,
                 role_prompt=REVIEW_PERSPECTIVES[p],
             )
             for p in self.perspectives
         ]
+        self.session_ids = [t.id for t in tasks]
 
         try:
             loop = asyncio.get_running_loop()
@@ -722,16 +757,40 @@ def build_review_chain(
     skill_context: str = "",
     checklist_rel_path: str = ".bug-patterns/checklist.md",
     privacy_policy: Any = None,
+    deep: bool = False,
+    governed: bool = True,
 ) -> tuple[list[Reviewer], list[str]]:
-    """Construct reviewer pipeline; StaticASTReviewer + BugPatternReviewer are always active."""
+    """Construct reviewer pipeline.
+
+    ``StaticASTReviewer`` + ``BugPatternReviewer`` are always active. With ``governed`` (default)
+    the deterministic Governed-Review-Protocol reviewers join them — security patterns, public
+    contract drift, test evidence and weak-test detection — at zero LLM cost. ``deep`` makes the
+    security reviewer also audit whole touched files (pre-existing issues become debt, not blockers).
+    """
+    from .review import (  # local import: the review package imports this module
+        ContractDriftReviewer,
+        SecurityReviewer,
+        TestEvidenceReviewer,
+        WeakTestReviewer,
+    )
+
     chain: list[Reviewer] = [
         StaticASTReviewer(privacy_policy=privacy_policy),
         BugPatternReviewer(checklist_rel_path=checklist_rel_path),
     ]
+    if governed:
+        chain += [
+            SecurityReviewer(deep=deep),
+            ContractDriftReviewer(),
+            TestEvidenceReviewer(),
+            WeakTestReviewer(),
+        ]
     warnings: list[str] = []
     for raw in names:
         n = raw.strip().lower()
-        if n in ("static", "static-ast", "bug-patterns", ""):
+        if n in (
+            "static", "static-ast", "bug-patterns", "security", "contract", "test-evidence", "weak-tests", "",
+        ):
             continue
         if n in ("neoagent", "neoagent-skills", "llm"):
             chain.append(SkillOrchestratedReviewer(skill_context=skill_context))

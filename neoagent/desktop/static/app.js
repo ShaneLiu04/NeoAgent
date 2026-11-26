@@ -172,6 +172,46 @@ function renderStepper(stage) {
   }).join("");
 }
 
+const VERDICT_LABELS = {
+  pass: ["通过", "ok"],
+  needs_changes: ["需修改（AI 可修复）", "warn"],
+  needs_human: ["需人工决策", "danger"],
+  redesign: ["需回退重新设计", "danger"],
+};
+
+function renderProtocol(loop) {
+  const rounds = loop.evidence?.review_protocol || [];
+  const box = $("ld-protocol");
+  $("ld-protocol-group").classList.toggle("hidden", !rounds.length);
+  if (!rounds.length) return;
+  const atts = loop.evidence?.review_attestations || [];
+  const stat = (k, v) => `<span class="meta">${k} <b>${escapeHtml(v)}</b></span>`;
+  // One row per review round, oldest first, so the verdict's progression is visible at a glance.
+  box.innerHTML = rounds
+    .slice(-4)
+    .map((r, i, arr) => {
+      const att = atts[rounds.indexOf(r)] || {};
+      const [vLabel, vCls] = VERDICT_LABELS[r.verdict] || [r.verdict, ""];
+      const cov = r.citation_coverage == null ? "—" : `${Math.round(r.citation_coverage * 100)}%`;
+      const isolated = att.isolated === true
+        ? `<span class="badge ok">独立 · 已证明</span>`
+        : `<span class="badge danger">独立性受损</span>`;
+      const sep = i < arr.length - 1 ? "border-bottom:1px solid var(--line,#eee);" : "";
+      return `
+    <div class="row" style="${sep}">
+      <div class="row-main">
+        <div class="row-title">第 ${escapeHtml(r.round)} 轮 <span class="badge ${vCls}">${escapeHtml(vLabel)}</span> ${isolated}</div>
+        <div class="row-sub">
+          ${stat("本次引入", r.introduced)}${stat("既有问题", r.carried_over)}${stat("本次修复", r.fixed_by_change)}
+          ${stat("安全债务", r.debt)}${stat("幻觉丢弃", r.ungrounded_dropped)}${stat("标准引用率", cov)}
+        </div>
+        <div class="row-sub muted small mono">输入摘要 ${escapeHtml(att.input_digest || "—")} · 检视器 ${escapeHtml((att.reviewers || []).length)} 个</div>
+      </div>
+    </div>`;
+    })
+    .join("");
+}
+
 async function loadSelectedLoop() {
   if (!state.loopId) return;
   const { loop, artifacts } = await apiGet(`/api/loops/${encodeURIComponent(state.loopId)}`);
@@ -188,17 +228,26 @@ async function loadSelectedLoop() {
   ];
   $("ld-meta").innerHTML = metas.map(([k, v]) => `<span class="meta">${k} <b>${escapeHtml(v)}</b></span>`).join("");
 
+  renderProtocol(loop);
+
   const findings = loop.findings || [];
   $("ld-findings").innerHTML = findings.length
     ? findings
         .map((f) => {
           const st = f.status === "open" ? (f.severity === "critical" || f.severity === "major" ? "danger" : "warn") : "ok";
-          const stLabel = { open: "待修复", fixed: "已修复", waived: "已豁免" }[f.status] || f.status;
+          const disputed = String(f.resolution || "").startsWith("DISPUTED");
+          const stLabel = disputed ? "已申诉" : { open: "待修复", fixed: "已修复", waived: "已豁免" }[f.status] || f.status;
+          const attr = f.attribution === "carried_over" ? `<span class="badge">既有问题</span>`
+            : f.attribution === "introduced" ? `<span class="badge warn">本次引入</span>` : "";
+          const std = f.standard ? `<span class="badge ok">${escapeHtml(f.standard)}</span>` : "";
+          const human = f.category === "human_decision" || f.category === "user_input"
+            ? `<span class="badge danger">需人工决策</span>` : "";
           return `<div class="row">
             <span class="sev-dot ${f.status === "open" ? escapeHtml(f.severity) : "fixed"}"></span>
             <div class="row-main">
               <div class="row-title"><code>${escapeHtml(f.rule)}</code>
                 <span class="badge ${f.severity === "critical" || f.severity === "major" ? "danger" : "warn"}">${escapeHtml(f.severity)}</span>
+                ${attr}${std}${human}
                 <span class="muted small mono">${escapeHtml(f.file || "diff")}:${f.line || 0}</span></div>
               <div class="row-sub">${escapeHtml(f.message)}</div>
             </div>

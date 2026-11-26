@@ -1,23 +1,47 @@
 """Closed-Loop AI Coder & Auto-Fixer with Generator-Evaluator Isolation.
 
-Enforces ``subagent-driven-development``, ``devflow-tdd``, and ``api-test-debug``:
-1. Fresh context per coding/fixing round — never shares memory with Reviewer.
+1. Fresh context per coding/fixing round — never shares memory with the Reviewer. Every
+   backend reports the ``session_id`` it ran in so the engine can *attest* independence.
 2. File handoff protocol: reads bounded ``task-brief.md`` / ``fix-brief.md``
    instead of stuffing 50k chars of conversation history into prompts.
 3. Environment blockers (``FailureKind.ENV_BLOCKER``) immediately abort auto-fixing
    and escalate to humans instead of thrashing source files.
 4. Oscillation detection: if any finding is reopened >= 2 times, halts and escalates.
+5. Review reception protocol: the fixer *verifies* a finding before acting on it. A finding it
+   can show to be wrong is **disputed with evidence** (``DISPUTE <id>: <reason>``) rather than
+   silently ignored or blindly "fixed" — the engine routes disputes to a human.
 """
 
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
 from .models import LoopRecord
+
+_DISPUTE_RE = re.compile(r"^\s*DISPUTE\s+([A-Za-z0-9_.:-]+)\s*:\s*(.+?)\s*$", re.MULTILINE)
+
+#: The review-reception rules every fixer receives (also embedded in ``fix-brief.md``).
+RECEPTION_PROTOCOL = (
+    "REVIEW RECEPTION PROTOCOL:\n"
+    "1. Verify each finding against the real code BEFORE changing anything. Reviewers can be wrong.\n"
+    "2. No performative agreement ('you are right', 'good catch'): either fix it or dispute it.\n"
+    "3. If a finding is incorrect, do NOT edit code to appease it. Reply with one line per finding:\n"
+    "   DISPUTE <finding-id>: <concrete evidence — code path, test, or guarantee that refutes it>\n"
+    "4. If a finding is correct, fix the root cause with the smallest change, one finding at a time,\n"
+    "   and add a regression test.\n"
+    "5. If fixing requires a business decision you cannot make, say so with "
+    "   DISPUTE <finding-id>: needs-owner-decision — <the question>."
+)
+
+
+def parse_disputes(text: str) -> dict[str, str]:
+    """Extract ``DISPUTE <finding-id>: <reason>`` lines from a fixer's reply."""
+    return {m.group(1): m.group(2) for m in _DISPUTE_RE.finditer(text or "")}
 
 
 @dataclass
@@ -28,6 +52,8 @@ class CodingOutcome:
     diff_override: str | None = None  # Optional in-memory diff for dry-run / testing
     cost_usd: float = 0.0
     error: str = ""
+    session_id: str = ""  # the isolated session this round ran in (independence attestation)
+    disputes: dict[str, str] = field(default_factory=dict)  # finding id -> evidence-backed reason
 
 
 class CodingBackend(Protocol):
@@ -104,6 +130,7 @@ class NeoAgentCodingBackend:
                 success=False,
                 summary="",
                 error=f"Missing API key for provider '{prov}'",
+                session_id=session_id,
             )
 
         agent = NeoAgent(
@@ -128,10 +155,16 @@ class NeoAgentCodingBackend:
             else:
                 out = asyncio.run(agent.invoke(user_prompt))
         except Exception as exc:
-            return CodingOutcome(False, "", error=str(exc))
+            return CodingOutcome(False, "", error=str(exc), session_id=session_id)
 
         cost = agent._budget.total_cost if agent._budget else 0.0
-        return CodingOutcome(success=not out.startswith("Error:"), summary=out[:1000], cost_usd=cost)
+        return CodingOutcome(
+            success=not out.startswith("Error:"),
+            summary=out[:1000],
+            cost_usd=cost,
+            session_id=session_id,
+            disputes=parse_disputes(out),
+        )
 
     def implement_feature(
         self,
@@ -171,6 +204,7 @@ class NeoAgentCodingBackend:
             "2. Fix ONLY the root causes listed in the fix brief; do not refactor unrelated files.\n"
             "3. For every bug fixed, ensure a regression test covers it.\n"
             f"4. Workspace root: {workspace_root}\n\n"
+            f"{RECEPTION_PROTOCOL}\n\n"
             f"{skill_context}"
         )
         return self._run_isolated_agent(

@@ -184,17 +184,27 @@ def save_jpg(img: Image.Image, path: Path, quality: int = 90) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-def build_cli_assets(out: Path) -> None:
-    from cli_story import run_story
+_LEAK_PATTERN = re.compile(r"[A-Za-z]:[\\/]|/Users/|/home/|neoagent-showcase-|\\Users\\", re.I)
 
-    print("[cli] running real neo-devops session on synthetic workspace …")
-    story = run_story()
-    term = Terminal(width=1280, rows=28, title="neo-devops — closed-loop CLI")
+
+def _assert_clean(story: list[tuple[str, str]]) -> None:
+    """Refuse to render a recording that still shows a workstation path or a company identifier."""
+    for cmd, text in story:
+        for chunk in (cmd, text):
+            hit = _LEAK_PATTERN.search(chunk)
+            if hit:
+                raise RuntimeError(f"privacy leak in recording: {hit.group(0)!r} in {cmd!r}")
+
+
+def _story_gif(story: list[tuple[str, str]], path: Path, title: str, rows: int = 28) -> None:
+    """Type each command (``# `` narration is typed without a prompt), then reveal its output."""
+    _assert_clean(story)
+    term = Terminal(width=1280, rows=rows, title=title)
     frames: list[Image.Image] = []
     durs: list[int] = []
     buf: list[str] = []
     for cmd, text in story:
-        prompt = "$ "
+        prompt = "" if cmd.startswith("# ") else "$ "
         for i in range(0, len(cmd) + 1, 5):
             frames.append(term.render(buf + [prompt + cmd[:i]], cursor=True))
             durs.append(45)
@@ -210,17 +220,46 @@ def build_cli_assets(out: Path) -> None:
         durs[-1] = 1300
         buf.append("")
     durs[-1] = 3500
-    save_gif([window_frame(f) for f in frames], durs, out / "cli-devops.gif", colors=96)
+    save_gif([window_frame(f) for f in frames], durs, path, colors=96)
 
-    # Static transcript (tall) of the most informative steps.
-    keep = [s for s in story if not s[0].startswith(("neo-devops init", "neo-devops build"))]
+
+def _story_transcript(story: list[tuple[str, str]], path: Path, title: str, skip: tuple[str, ...] = ()) -> None:
+    """Static tall transcript of a story, skipping boilerplate steps."""
+    _assert_clean(story)
+    term = Terminal(width=1280, rows=1, title=title)
     lines: list[str] = []
-    for cmd, text in keep:
-        lines.append("$ " + cmd)
+    for cmd, text in story:
+        if cmd.startswith(skip):
+            continue
+        lines.append(cmd if cmd.startswith("# ") else "$ " + cmd)
         lines.extend(term.wrap(text))
         lines.append("")
-    tall = Terminal(width=1280, rows=len(lines), title="neo-devops — real session transcript")
-    save_jpg(window_frame(tall.render(lines)), out / "cli-devops.jpg")
+    tall = Terminal(width=1280, rows=len(lines), title=title)
+    save_jpg(window_frame(tall.render(lines)), path)
+
+
+def build_cli_assets(out: Path) -> None:
+    from cli_story import run_story
+
+    print("[cli] running real neo-devops session on synthetic workspace …")
+    story = run_story()
+    _story_gif(story, out / "cli-devops.gif", "neo-devops — closed-loop CLI")
+    _story_transcript(
+        story, out / "cli-devops.jpg", "neo-devops — real session transcript",
+        skip=("neo-devops init", "neo-devops build"),
+    )
+
+
+def build_review_protocol_assets(out: Path) -> None:
+    from cli_story import run_review_story
+
+    print("[review] running a two-round governed review on a synthetic repository …")
+    story = run_review_story()
+    _story_gif(story, out / "review-protocol.gif", "neo-devops — governed review protocol", rows=30)
+    _story_transcript(
+        story, out / "review-protocol.jpg", "neo-devops — review protocol transcript",
+        skip=("neo-devops init", "neo-devops build"),
+    )
 
 
 def build_quality_asset(out: Path) -> None:
@@ -283,6 +322,7 @@ def build_ui_assets(frames_dir: Path, out: Path) -> None:
         "03-new-loop-sheet": "ui-new-loop.jpg",
         "04-loop-autopilot": "ui-autopilot.jpg",
         "05-loop-done": "ui-closed-loop.jpg",
+        "05-protocol": "ui-review-protocol.jpg",
         "06-skills": "ui-skills.jpg",
         "06-skills-validate": "ui-skills-validate.jpg",
         "07-harness-before": "ui-harness-before.jpg",
@@ -362,19 +402,19 @@ def build_architecture(path: Path) -> None:
         d.text((60, y), label, font=font("cjk_bold", 17), fill=(120, 124, 140))
 
     d.text((60, 40), "NeoAgent Studio v3.5 — 生产级架构总览", font=hb, fill=(28, 28, 30))
-    d.text((60, 86), "CLI × Studio 双端体验 × DeepSeek 推理-行动 Harness × Harness L1–L7 × 渐进式 Skill 仓库", font=tx, fill=(110, 114, 128))
+    d.text((60, 86), "CLI × Studio 双端体验 × 推理-行动 Harness × 治理型检视协议 × Harness L1–L7 × 渐进式 Skill 仓库", font=tx, fill=(110, 114, 128))
 
     band(140, "交互层 SURFACES")
     surf = [
         ("NeoAgent CLI", "neo · Rich 流式\n<think> 折叠渲染", (0, 122, 255)),
         ("NeoAgent Studio", "neo-desktop · iOS × Codex 设计\nSSE 流式 · 深浅双色", (88, 86, 214)),
-        ("DevOps CLI", "neo-devops · 19 子命令\n--json 机器可读", (52, 199, 89)),
+        ("DevOps CLI", "neo-devops · 22 子命令\n--json 机器可读", (52, 199, 89)),
         ("IDE / Webhook", "neoagent-mcp (MCP)\nFastAPI 服务", (255, 149, 0)),
     ]
     for i, (t, s, c) in enumerate(surf):
         box(60 + i * 475, 170, 445, 120, c, t, s)
 
-    band(320, "推理层 DEEPSEEK REASONING-ACTION HARNESS")
+    band(320, "推理层 REASONING-ACTION HARNESS")
     box(60, 350, 1880, 100, (28, 28, 30), "ThinkStreamParser  ·  跨轮 CoT 折叠  ·  HarnessRoleRouter (reasoner / chat)  ·  并发工具 + CapabilityToken", "")
 
     band(480, "治理层 HARNESS ENGINEERING L1–L7")
@@ -383,14 +423,14 @@ def build_architecture(path: Path) -> None:
         ("L2", "工具输出\n蒸馏", (48, 176, 199)),
         ("L3", "三条件\n子代理门禁", (88, 86, 214)),
         ("L4", "40% 上下文\nContext Reset", (52, 199, 89)),
-        ("L5", "独立评估\n阶段门禁", (255, 149, 0)),
+        ("L5", "独立性实测\n检视协议", (255, 149, 0)),
         ("L6", "反作弊 · DLP\nSHA-256 账本", (255, 59, 48)),
         ("L7", "SAFE\n自演进", (175, 82, 222)),
     ]
     for i, (t, s, c) in enumerate(layers):
         box(60 + i * 270, 510, 250, 140, c, t, s)
 
-    band(680, "执行层 CLOSED-LOOP DEVOPS ENGINE")
+    band(680, "执行层 CLOSED-LOOP DEVOPS ENGINE · GOVERNED REVIEW PROTOCOL")
     stages = ["INTAKE", "BUILD", "REVIEW", "PIPELINE", "RELEASE", "OBSERVE", "LEARN"]
     sx = 60
     for i, st in enumerate(stages):
@@ -401,7 +441,7 @@ def build_architecture(path: Path) -> None:
         if i < len(stages) - 1:
             d.polygon([(sx + w + 8, 740), (sx + w + 26, 747), (sx + w + 8, 754)], fill=(150, 155, 170))
         sx += w + 46
-    d.text((60, 796), "REVIEW → FIX → REVIEW 与 PIPELINE → FIX → PIPELINE 有界自愈 · 金丝雀 5%→25%→100% 自动回滚 · 反馈聚类派生 HOTFIX / ITERATION", font=tx, fill=(110, 114, 128))
+    d.text((60, 796), "REVIEW 检视协议：归因（引入 / 既有 / 已修复）· 证据落地 · 独立性证明 · 决策简报   PIPELINE 有界自愈 · 金丝雀 5%→25%→100% 自动回滚 · 反馈派生 HOTFIX", font=tx, fill=(110, 114, 128))
 
     band(850, "能力层 KNOWLEDGE & SAFETY")
     box(60, 880, 610, 150, (255, 255, 255), "三级渐进式 Skill Registry", "Tier1 索引 → Tier2 SKILL.md → Tier3 references\n阶段 / 语言路由 · F1–F4 校验", fg=(28, 28, 30))
@@ -425,6 +465,7 @@ def main() -> None:
         build_ui_assets(args.ui_frames, args.out)
     if not args.skip_cli:
         build_cli_assets(args.out)
+        build_review_protocol_assets(args.out)
     if not args.skip_quality:
         build_quality_asset(args.out)
     build_architecture(args.out / "architecture.jpg")

@@ -102,6 +102,22 @@ class SkillPolicyConfig:
     auto_evolve_checklist: bool = True
 
 
+CARRIED_OVER_POLICIES = ("downgrade", "keep", "drop")
+
+
+@dataclass
+class ReviewProtocolConfig:
+    """Governed Review Protocol switches (``[review]`` in ``devops.toml``)."""
+
+    attribution: bool = True              # classify findings as introduced / carried_over / fixed
+    carried_over_policy: str = "downgrade"  # downgrade (cap at info; critical stays) | keep | drop
+    ground_llm_findings: bool = True      # drop LLM findings that do not point at real diff lines
+    scope_drift: bool = True              # flag files changed outside the loop's declared scope
+    deep_audit: bool = False              # also audit whole touched files; file old issues as debt
+    verify_vanished: bool = True          # an LLM finding is only "fixed" if its code really changed
+    write_record: bool = True             # persist review-record-rN.md for every round
+
+
 @dataclass
 class DevOpsConfig:
     base_branch: str = "main"
@@ -112,6 +128,7 @@ class DevOpsConfig:
     feedback: FeedbackPolicyConfig = field(default_factory=FeedbackPolicyConfig)
     skills: SkillPolicyConfig = field(default_factory=SkillPolicyConfig)
     privacy: PrivacyPolicyConfig = field(default_factory=PrivacyPolicyConfig)
+    review: ReviewProtocolConfig = field(default_factory=ReviewProtocolConfig)
 
 
 def _merge_dc(dc_cls: type[Any], raw: dict[str, Any]) -> Any:
@@ -141,6 +158,8 @@ def _validate_config(cfg: DevOpsConfig) -> None:
         raise ValueError("release.stages must be strictly increasing and end at 100%")
     if cfg.budget.max_review_rounds < 1 or cfg.budget.max_pipeline_fixes < 1:
         raise ValueError("budget rounds must be >= 1")
+    if cfg.review.carried_over_policy not in CARRIED_OVER_POLICIES:
+        raise ValueError(f"review.carried_over_policy must be one of {CARRIED_OVER_POLICIES}")
 
 
 def load_devops_config(root: Path | str, filename: str = DEVOPS_CONFIG_NAME) -> DevOpsConfig:
@@ -171,6 +190,7 @@ def load_devops_config(root: Path | str, filename: str = DEVOPS_CONFIG_NAME) -> 
     cfg.feedback = _merge_dc(FeedbackPolicyConfig, data.get("feedback", {}))
     cfg.skills = _merge_dc(SkillPolicyConfig, data.get("skills", {}))
     cfg.privacy = _merge_dc(PrivacyPolicyConfig, data.get("privacy", {}))
+    cfg.review = _merge_dc(ReviewProtocolConfig, data.get("review", {}))
     _validate_config(cfg)
     return cfg
 
@@ -196,6 +216,15 @@ blocked_terms = []
 auto_recommend = true
 checklist_path = ".bug-patterns/checklist.md"
 auto_evolve_checklist = true
+
+[review]
+attribution = true              # only blame a change for what it introduced
+carried_over_policy = "downgrade"  # downgrade | keep | drop  (critical findings are never downgraded)
+ground_llm_findings = true      # drop LLM findings that do not point at real added lines
+scope_drift = true              # flag files changed outside the loop's declared scope
+deep_audit = false              # audit whole touched files; pre-existing issues become debt, not blockers
+verify_vanished = true          # an LLM finding is only fixed if its code actually changed
+write_record = true             # persist review-record-rN.md for every round
 
 [pipeline]
 coverage_min = 0

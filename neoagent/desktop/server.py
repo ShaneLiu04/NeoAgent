@@ -427,6 +427,7 @@ def _make_handler(state: DesktopState) -> type[BaseHTTPRequestHandler]:
                     skill_context=bundle,
                     checklist_rel_path=eng.cfg.skills.checklist_path,
                     privacy_policy=eng.cfg.privacy,
+                    deep=bool(body.get("deep")) or eng.cfg.review.deep_audit,
                 )
                 try:
                     res = eng.review(lp, str(diff_txt), chain)
@@ -457,6 +458,19 @@ def _make_handler(state: DesktopState) -> type[BaseHTTPRequestHandler]:
                     str(body.get("reason") or "Accepted risk"),
                 )
                 return {"code": 0, "stage": lp.stage.value, "message": "Finding waived", "loop": lp.to_dict()}
+            elif act == "respond":
+                eng.respond(
+                    lp,
+                    str(body.get("finding_id") or ""),
+                    str(body.get("by") or "engineer"),
+                    str(body.get("reason") or ""),
+                )
+                return {
+                    "code": 0,
+                    "stage": lp.stage.value,
+                    "message": "Finding disputed; routed to a human decision",
+                    "loop": lp.to_dict(),
+                }
             elif act == "resume":
                 to_stage = Stage(body["to"]) if body.get("to") else None
                 res = eng.resume(lp, str(body.get("by") or "engineer"), to_stage)

@@ -113,16 +113,30 @@ class FindingStatus(str, enum.Enum):
 
 
 class FindingCategory(str, enum.Enum):
-    """Actionability taxonomy derived from devflow-review & api-test-debug."""
+    """Actionability taxonomy: decides whether an AI may repair a finding or a human must.
+
+    Routing is mechanical (see ``review.protocol``): auto-fixable categories go back to BUILD
+    with a repair brief; human-class categories escalate with a minimal decision brief instead of
+    letting the fixer guess at business facts or architectural trade-offs.
+    """
 
     LLM_FIXABLE = "llm_fixable"          # Deterministic/local code issue AI can repair
     ENV_BLOCKER = "env_blocker"          # Missing daemon/network/secret — halt, don't thrash code
     SPEC_MISMATCH = "spec_mismatch"      # Business expectation mismatch — never weaken assertions
     HUMAN_DECISION = "human_decision"    # Architecture/security waiver needing engineer judgment
+    USER_INPUT = "user_input"            # A business fact, priority or threshold only the owner knows
+
+    @property
+    def auto_fixable(self) -> bool:
+        return self in (FindingCategory.LLM_FIXABLE, FindingCategory.SPEC_MISMATCH)
+
+    @property
+    def needs_human(self) -> bool:
+        return not self.auto_fixable
 
 
 class FailureKind(str, enum.Enum):
-    """Pipeline failure classification (inspired by api-test-debug skill)."""
+    """Pipeline failure classification: code defect vs environment vs spec mismatch."""
 
     CODE_DEFECT = "code_defect"                      # Syntax/import/type/lint/unit bug -> auto-fix
     ENV_BLOCKER = "env_blocker"                      # Timeout/missing binary/network/DB down -> escalate
@@ -144,6 +158,14 @@ class Finding:
     first_seen_round: int = 1
     reopened_count: int = 0
     id: str = ""
+    #: Citation of the rule's origin (e.g. ``CWE-89``); filled from the rule catalog.
+    standard: str = ""
+    #: The exact offending source line, so a finding can be checked against the diff.
+    evidence: str = ""
+    #: ``introduced`` (this change) | ``carried_over`` (pre-existing, merely touched) | ``""``.
+    attribution: str = ""
+    #: Where an upstream fix belongs when the code is not the real problem: build | spec | design.
+    rework: str = ""
 
     def __post_init__(self) -> None:
         if not self.id:
@@ -170,6 +192,10 @@ class Finding:
             "resolution": self.resolution,
             "first_seen_round": self.first_seen_round,
             "reopened_count": self.reopened_count,
+            "standard": self.standard,
+            "evidence": self.evidence,
+            "attribution": self.attribution,
+            "rework": self.rework,
         }
 
     @classmethod
@@ -193,6 +219,10 @@ class Finding:
             first_seen_round=int(d.get("first_seen_round", 1)),
             reopened_count=int(d.get("reopened_count", 0)),
             id=str(d.get("id", "")),
+            standard=str(d.get("standard", "")),
+            evidence=str(d.get("evidence", "")),
+            attribution=str(d.get("attribution", "")),
+            rework=str(d.get("rework", "")),
         )
 
 
@@ -327,6 +357,8 @@ class LoopRecord:
 
 def findings_to_sarif(findings: list[Finding], tool_name: str = "NeoAgent-DevOps") -> dict[str, Any]:
     """Export findings as OASIS SARIF 2.1.0 JSON for GitHub/GitLab/Gitea integration."""
+    from .review.catalog import resolve_rule
+
     rules_seen: dict[str, dict[str, Any]] = {}
     results: list[dict[str, Any]] = []
 
@@ -334,11 +366,18 @@ def findings_to_sarif(findings: list[Finding], tool_name: str = "NeoAgent-DevOps
         if f.status != FindingStatus.OPEN:
             continue
         if f.rule not in rules_seen:
-            rules_seen[f.rule] = {
+            spec = resolve_rule(f.rule)
+            entry: dict[str, Any] = {
                 "id": f.rule,
-                "shortDescription": {"text": f.rule},
+                "shortDescription": {"text": spec.title if spec else f.rule},
                 "defaultConfiguration": {"level": f.severity.sarif_level},
             }
+            tags = [t for t in ((spec.standard if spec else ""), f.standard) if t]
+            if spec:
+                tags.append(spec.dimension)
+            if tags:
+                entry["properties"] = {"tags": sorted(set(tags))}
+            rules_seen[f.rule] = entry
         loc: dict[str, Any] = {
             "physicalLocation": {
                 "artifactLocation": {"uri": f.file.replace("\\", "/") or "unknown"},
@@ -355,6 +394,15 @@ def findings_to_sarif(findings: list[Finding], tool_name: str = "NeoAgent-DevOps
                 "fingerprints": {"neoagent/v1": f.fingerprint()},
                 "message": {"text": msg_text},
                 "locations": [loc],
+                "properties": {
+                    k: v
+                    for k, v in (
+                        ("attribution", f.attribution),
+                        ("standard", f.standard),
+                        ("category", f.category.value),
+                    )
+                    if v
+                },
             }
         )
 

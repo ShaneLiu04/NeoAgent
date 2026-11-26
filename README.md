@@ -9,7 +9,7 @@
 
 <p align="center">
   <img alt="python" src="https://img.shields.io/badge/python-3.11%2B-111114?style=flat-square&logo=python&logoColor=white" />
-  <img alt="tests" src="https://img.shields.io/badge/tests-94%20passed-34c759?style=flat-square" />
+  <img alt="tests" src="https://img.shields.io/badge/tests-140%20passed-34c759?style=flat-square" />
   <img alt="ruff" src="https://img.shields.io/badge/ruff-clean-0a84ff?style=flat-square" />
   <img alt="dlp" src="https://img.shields.io/badge/privacy--scan-CLEAN-34c759?style=flat-square" />
   <img alt="harness" src="https://img.shields.io/badge/governance-L1%E2%80%93L7-7c83ff?style=flat-square" />
@@ -47,6 +47,7 @@
 | **闭环，而不是聊天** | 需求 → 编码 → 评审 → 流水线 → 金丝雀 → 观测 → 演进，七阶段可自动推进，也可在任一门禁人工签署 | `devops/engine.py` |
 | **运维信号回流到代码** | 金丝雀回滚的原因与用户反馈一起聚类，自动派生 HOTFIX / ITERATION 子闭环，并附 SRS 草稿 | `devops/feedback.py` · `engine.py::ingest_feedback` |
 | **SRE 原则写进代码** | 没有回滚能力就不允许发布；遥测中断即回滚；样本不足则暂停放量；人工批准后从断点续发 | `devops/release.py` |
+| **评审本身可被验证** | 独立性由每轮证明实测而非宣称；只追究“这次变更”引入的问题；LLM 发现必须落在真实 diff 行上；需要人拍板的问题产出决策简报而不是让 AI 乱改 —— [治理型检视协议](docs/REVIEW_PROTOCOL.md) | `devops/review/` |
 | **治理是机械的，不靠提示词** | 反作弊 AST 拦截删断言、加 skip、降覆盖率；失败三分类，环境类故障直接升级给人，不让模型去“修”环境 | `devops/reviewers.py` · `devops/pipeline.py` |
 | **度量来自账本** | DORA 四项与 AI 自治度、AI 成本都从防篡改账本直接计算，结果可复现、可审计 | `devops/metrics.py` · `devops/ledger.py` |
 | **控制平面零依赖** | Studio 服务端、`neo-devops`、MCP、技能库只用标准库，由测试在屏蔽第三方 import 的进程中强制验证 | `tests/test_control_plane_stdlib.py` |
@@ -57,7 +58,8 @@
 
 | 指标 | 结果 | 怎么验证 |
 |---|---|---|
-| 自动化测试 | 94 通过，覆盖闭环端到端、评审与安全、技能注册表、Studio API / SSE、MCP | `pytest tests -q` |
+| 自动化测试 | 140 通过，覆盖闭环端到端、检视协议、评审与安全、技能注册表、Studio API / SSE、MCP | `pytest tests -q` |
+| 检视规则目录 | 44 条规则，逐条带公开出处（CWE / 语言规范 / 流程条目），并映射 LLM 自由命名的规则 | `neo-devops rules` |
 | 控制平面第三方依赖 | 0（`pyproject.toml` 核心依赖为空，由测试守护） | `tests/test_control_plane_stdlib.py` |
 | 治理层级 | L1–L7 七层，每层对应可执行的检查或门禁 | `neo-devops harness-audit` |
 | 发布不变量 | 四条 SRE 规则，由代码强制执行 | `devops/release.py` |
@@ -68,7 +70,7 @@
 
 ## ✦ 功能导览
 
-> 以下全部素材均来自本地真实运行：一个合成的 `payment-gateway` 演示仓库 + 15 项中性技能，驱动真实的 Studio 前端与 `neo-devops` CLI 录制（见 [复现展示素材](#-复现展示素材)）。
+> 以下素材均由本地真实运行录制：合成的 `payment-gateway` 演示仓库 + 15 项中性技能，驱动真实的 Studio 前端与 `neo-devops` CLI。为保证可复现，AI 编码环节由确定性的离线替身完成（不依赖模型 API Key），评审、流水线、金丝雀、账本与判决全部是真实执行的结果（见 [复现展示素材](#-复现展示素材)）。
 
 ### 1 · Agent 会话 —— 推理可见、过程可折叠
 
@@ -82,27 +84,44 @@ Codex 式居中输入与建议卡片；按角色（架构师 / 编码 / 评审 /
 
 <p align="center"><img src="docs/assets/ui-closed-loop.gif" alt="交付闭环：Autopilot 自愈与反馈派生" width="92%" /></p>
 
-### 3 · 技能库 —— 三级渐进式披露
+### 3 · 检视协议 —— 归因、证据与分流
+
+独立评审不再只是“再跑一遍”。下面是一段真实的两轮检视：第 1 轮把发现归因为 *本次引入 / 既有 / 本次修复*，只追究这次变更的责任，判决为「需修改」，交给修复器；修复后，第 2 轮发现修复补丁顺带改动了声明范围之外的计费模块，协议没有放行，而是生成**决策简报**交给负责人确认，自动修复就此暂停。每轮都写入独立性证明与检视记录。
+
+<p align="center"><img src="docs/assets/review-protocol.gif" alt="治理型检视协议：两轮检视、归因、判决流转与决策简报" width="92%" /></p>
+
+Studio 中同一判决链以逐轮卡片呈现：判决、独立性证明、本次引入 / 既有 / 修复计数与标准引用率一屏可见。
+
+<p align="center"><img src="docs/assets/ui-review-protocol.jpg" alt="Studio 检视协议卡片：逐轮判决、独立性证明与归因计数" width="92%" /></p>
+
+完整设计见 [docs/REVIEW_PROTOCOL.md](docs/REVIEW_PROTOCOL.md)。
+
+### 4 · 技能库 —— 三级渐进式披露
 
 按阶段筛选、按触达文件智能匹配；点开即读 Tier 2 `SKILL.md`，Tier 3 参考资料按需加载；一键运行 F1–F4 合规校验（frontmatter / 命名 / 目录一致 / 触发描述）。
 
 <p align="center"><img src="docs/assets/ui-skills.gif" alt="技能库：渐进式加载与 F1–F4 校验" width="92%" /></p>
 
-### 4 · 治理与合规 —— 七层健康度一屏可见
+### 5 · 治理与合规 —— 七层健康度一屏可见
 
 L1–L7 实时健康卡片；一键补齐四层 AI 原生文档骨架；L7 自演进提案（来自历史回滚的预防规则）经人工确认后固化进 `AGENTS.md`；DORA 四项指标、AI 自治度与全仓隐私扫描同屏呈现。
 
 <p align="center"><img src="docs/assets/ui-harness.gif" alt="治理与合规：L1–L7、L7 自演进与隐私扫描" width="92%" /></p>
 
-### 5 · CLI —— 同一引擎，终端原生
+### 6 · CLI —— 同一引擎，终端原生
 
-`neo-devops` 19 个子命令覆盖完整闭环，`--json` 输出机器可读结果，可直接接入 CI。下图是一次真实会话：初始化 → 骨架补齐 → 从 Git Diff 建环 → 评审拦截并生成修复简报 → 技能路由 → F1–F4 校验 → 治理审计 → 隐私扫描 → 账本校验。
+`neo-devops` 22 个子命令覆盖完整闭环，`--json` 输出机器可读结果，可直接接入 CI。下图是一次真实会话：初始化 → 骨架补齐 → 从 Git Diff 建环 → 评审拦截并生成修复简报 → 技能路由 → F1–F4 校验 → 治理审计 → 隐私扫描 → 账本校验。
 
 <p align="center"><img src="docs/assets/cli-devops.gif" alt="neo-devops CLI 真实会话" width="92%" /></p>
 
 <details>
 <summary><b>完整 CLI 会话转录（静态长图）</b></summary>
 <p align="center"><img src="docs/assets/cli-devops.jpg" alt="CLI 会话转录" width="80%" /></p>
+</details>
+
+<details>
+<summary><b>检视协议 CLI 转录：归因、决策简报与检视记录</b></summary>
+<p align="center"><img src="docs/assets/review-protocol.jpg" alt="检视协议 CLI 会话转录" width="80%" /></p>
 </details>
 
 ### 截图画廊
@@ -253,9 +272,33 @@ flowchart LR
 | **L2** | 工具结果提炼 | 单行 grep 式日志、失败输出蒸馏、超时重试守护 |
 | **L3** | 子代理门禁 | 仅当 `自包含输入 ∧ 结构化输出 ∧ 高独立性` 才派发子代理 |
 | **L4** | 记忆与上下文 | `SMART ≤ 30%` · `WARNING 30–40%` · `> 40%` 强制 Context Reset 与 `checkpoint-handoff.md` |
-| **L5** | 独立评估 | 评审只接收 diff 与技能包，不继承生成者的对话上下文；生成会话按 `session_id` 隔离；规格 / 设计阶段门禁 |
+| **L5** | 独立评估 | 评审只接收 diff 与技能包，不继承生成者的对话上下文；生成会话按 `session_id` 隔离，**每轮写入独立性证明并由 `harness-audit` 实测**（会话重叠或声明禁用输入即判违例）；规格 / 设计阶段门禁 |
 | **L6** | 机械约束 | 反作弊 AST 检视（禁止删断言 / skip / 降覆盖率）、路径越界防护、SHA-256 防篡改账本、出站 DLP |
 | **L7** | SAFE 自演进 | Sense → Adapt → Formalize → Evaluate；`DATA` / `RULE` / `STRUCTURAL` 分级，结构性变更必须人工确认 |
+
+---
+
+## ✦ 治理型检视协议
+
+检视器的数量不是评审可信的原因。NeoAgent 在检视器之外加了五条**机械执行**的不变量，让一次评审成为一份可以被相信、可以被审计的记录：
+
+| 不变量 | 做法 |
+|---|---|
+| **独立性被证明** | 每轮记录评审者实际收到的输入摘要、所在会话，以及与作者会话是否重叠；`harness-audit` 读取实测值，没评审过就如实报告“未知” |
+| **有证据才有意见** | LLM 发现必须落在 diff 的真实新增行上并引用原文；落不了地的丢弃并计数，丢弃率即幻觉指标 |
+| **只追究这次变更** | 反转 diff 在“旧代码”上重放确定性检视器，把发现分为 *本次引入 / 既有 / 本次修复*；既有问题降级不阻塞（CRITICAL 除外），修复了问题的变更能得到记功 |
+| **按谁有权决定分流** | AI 可修的回到 BUILD；需要业务事实或架构裁决的产出**决策简报**升级给人；缺陷在规格/设计时判 `REDESIGN` 而不是对着代码打补丁 |
+| **发现不能无故消失** | LLM 发现仅仅“没再被提起”而代码原样存在时保持 OPEN；修复器可用 `DISPUTE <id>: 证据` 申诉，申诉走人工而不是被静默忽略 |
+
+默认检视链还包含 21 条带 CWE 引用的安全规则（`--deep` 把旧问题记为安全债务而非阻塞项）、范围漂移、测试证据、公开契约漂移与“无效测试”检测，全部确定性、零 LLM 成本。每轮产出 `review-record-rN.md`：独立性证明 + 责任划分 + 逐条发现的处置状态。
+
+```bash
+neo-devops review <loop> --deep      # 判决 · 归因 · 独立性 · 检视记录
+neo-devops respond <loop> <finding> --by me --reason "调用方已校验，见 test_x"
+neo-devops rules                     # 规则 → 维度 → 公开出处
+```
+
+两轮检视的真实录屏与 Studio 判决卡片见上文 **功能导览 · 3**。设计细节、判决流转、`devops.toml [review]` 配置与度量见 **[docs/REVIEW_PROTOCOL.md](docs/REVIEW_PROTOCOL.md)**。
 
 ---
 
@@ -348,7 +391,14 @@ node scripts/showcase/capture_ui.mjs http://127.0.0.1:8765 out/   # 无头浏览
 python scripts/showcase/make_assets.py --ui-frames out/    # 合成 GIF / JPG / 架构图 / 质量门禁
 ```
 
-演示数据完全合成：中性的支付网关仓库、15 项中性技能、临时目录路径在录制时统一替换为 `~/demo`，素材生成时技能发现被固定到合成技能包。
+| 素材 | 生成脚本 | 内容 |
+|---|---|---|
+| `ui-*.gif` / `ui-*.jpg` / `hero.jpg` | `capture_ui.mjs` → `make_assets.py` | 真实 Studio 前端的录制帧与静态截图 |
+| `cli-devops.gif` / `.jpg` | `cli_story.py::run_story` | 闭环 CLI 会话 |
+| `review-protocol.gif` / `.jpg` | `cli_story.py::run_review_story` | 两轮检视：归因、修复、决策简报、检视记录 |
+| `architecture.jpg` · `quality-gates.jpg` | `make_assets.py` | 架构图；真实运行的 ruff / pytest / 隐私扫描 / 治理审计输出 |
+
+演示数据完全合成：中性的支付网关仓库、15 项中性技能、临时目录路径在录制时统一替换为 `~/demo`，素材生成时技能发现被固定到合成技能包。检视协议录屏使用同名合成仓库的另一个场景（`svc/auth.py` 的重置验证码改动）。录屏文本在渲染前经过路径脱敏，并由脚本自动扫描：若仍出现工作站路径或内部标识，渲染会直接失败。
 
 ---
 
@@ -358,6 +408,7 @@ python scripts/showcase/make_assets.py --ui-frames out/    # 合成 GIF / JPG / 
 neoagent/
 ├── core/          # 模型网关（多 Provider）、推理流解析、记忆与 40% 上下文、安全与能力令牌
 ├── devops/        # 闭环引擎、评审器、自动修复、发布、治理 L1–L7、DLP、指标
+│   └── review/    # 治理型检视协议：归因、证据落地、规则目录、安全/契约/测试检视器、检视记录
 ├── skills/        # 三级渐进式技能注册表与 F1–F4 校验
 ├── desktop/       # NeoAgent Studio：零依赖服务端 + static/（iOS × Codex 前端）
 ├── cli/           # neo（终端 Agent）与 neo-devops（闭环 CLI）
@@ -368,7 +419,7 @@ scripts/showcase/  # 演示仓库、录制与素材合成
 docs/              # 架构文档与展示素材
 ```
 
-更多细节见 [`docs/AI-Map.md`](docs/AI-Map.md)、[`docs/ARCHITECTURE_DEVOPS.md`](docs/ARCHITECTURE_DEVOPS.md) 与 [`docs/AIOPS_PLAYBOOK.md`](docs/AIOPS_PLAYBOOK.md)。
+更多细节见 [`docs/AI-Map.md`](docs/AI-Map.md)、[`docs/ARCHITECTURE_DEVOPS.md`](docs/ARCHITECTURE_DEVOPS.md)、[`docs/AIOPS_PLAYBOOK.md`](docs/AIOPS_PLAYBOOK.md) 与 [`docs/REVIEW_PROTOCOL.md`](docs/REVIEW_PROTOCOL.md)。
 
 ---
 

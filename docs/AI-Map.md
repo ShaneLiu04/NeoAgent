@@ -8,7 +8,9 @@ description: Top-level index of specs, active changes, architecture, and enginee
 > Linked from `AGENTS.md` (schema layer).
 
 ## 1. Architecture (`docs/architecture/` & `docs/`)
-- [`docs/ARCHITECTURE_DEVOPS.md`](ARCHITECTURE_DEVOPS.md) — NeoAgent Studio × DeepSeek Harness L1–L7 & Closed-Loop DevOps System Design
+- [`docs/ARCHITECTURE_DEVOPS.md`](ARCHITECTURE_DEVOPS.md) — NeoAgent Studio × Harness L1–L7 & Closed-Loop DevOps System Design
+- [`docs/REVIEW_PROTOCOL.md`](REVIEW_PROTOCOL.md) — Governed Review Protocol: attribution, evidence grounding, independence attestation, triage routing, review records
+- [`docs/AIOPS_PLAYBOOK.md`](AIOPS_PLAYBOOK.md) — AI DevOps engineering handbook
 
 ## 2. Module Baselines (`docs/specs/features/`)
 - Baseline feature specifications live under `docs/specs/features/<module>/`.

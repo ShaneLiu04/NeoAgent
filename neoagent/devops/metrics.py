@@ -87,6 +87,7 @@ def compute_devops_metrics(
         for lp in fb_shipped
     ]
     total_cost = round(sum(lp.total_cost_usd for lp in loops), 6)
+    review_quality = _review_quality(loops)
 
     return {
         "loops_total": len(loops),
@@ -107,7 +108,33 @@ def compute_devops_metrics(
             "feedback_to_fix_hours_median": _to_hours(median(fb_cycles)) if fb_cycles else None,
             "total_ai_cost_usd": total_cost,
         },
+        "review_quality": review_quality,
         "stages": {s.value: sum(1 for lp in loops if lp.stage == s) for s in Stage},
+    }
+
+
+def _review_quality(loops: list[LoopRecord]) -> dict[str, Any]:
+    """How trustworthy the reviews themselves were (Governed Review Protocol aggregates)."""
+    rounds = [r for lp in loops for r in lp.evidence.get("review_protocol", [])]
+    atts = [a for lp in loops for a in lp.evidence.get("review_attestations", [])]
+    if not rounds:
+        return {"rounds": 0}
+    introduced = sum(r.get("introduced", 0) for r in rounds)
+    carried = sum(r.get("carried_over", 0) for r in rounds)
+    coverage = [r["citation_coverage"] for r in rounds if r.get("citation_coverage") is not None]
+    verdicts: dict[str, int] = {}
+    for r in rounds:
+        verdicts[r.get("verdict", "?")] = verdicts.get(r.get("verdict", "?"), 0) + 1
+    return {
+        "rounds": len(rounds),
+        "isolated_rate": round(sum(1 for a in atts if a.get("isolated")) / len(atts), 3) if atts else None,
+        "introduced": introduced,
+        "carried_over": carried,
+        "fixed_by_change": sum(r.get("fixed_by_change", 0) for r in rounds),
+        "blame_precision": round(introduced / (introduced + carried), 3) if introduced + carried else None,
+        "ungrounded_dropped": sum(r.get("ungrounded_dropped", 0) for r in rounds),
+        "avg_citation_coverage": round(mean(coverage), 3) if coverage else None,
+        "verdicts": verdicts,
     }
 
 
@@ -136,6 +163,25 @@ def render_devops_metrics_markdown(m: dict[str, Any]) -> str:
         f"- **Canary Auto-Rollbacks**: {a['rollback_count']}\n"
         f"- **Feedback-to-Production Cycle (median)**: {_fmt(a['feedback_to_fix_hours_median'], ' h')}\n"
         f"- **Cumulative AI Spend**: ${a['total_ai_cost_usd']:.4f}\n\n"
+        f"{_render_review_quality(m.get('review_quality') or {})}"
         f"## Active Stage Distribution\n"
         f"{stage_summary}\n"
+    )
+
+
+def _render_review_quality(q: dict[str, Any]) -> str:
+    if not q.get("rounds"):
+        return ""
+    def _f(v: Any) -> str:
+        return "n/a" if v is None else str(v)
+
+    return (
+        "## Review Trustworthiness (Governed Review Protocol)\n"
+        f"- **Reviews attested**: {q['rounds']} round(s), isolation rate {_f(q['isolated_rate'])}\n"
+        f"- **Blame precision** (introduced / all reported): {_f(q['blame_precision'])} "
+        f"({q['introduced']} introduced, {q['carried_over']} carried over, "
+        f"{q['fixed_by_change']} fixed by the changes)\n"
+        f"- **Ungrounded LLM findings dropped**: {q['ungrounded_dropped']}\n"
+        f"- **Blocking findings with a cited standard**: {_f(q['avg_citation_coverage'])}\n"
+        f"- **Verdicts**: {q['verdicts']}\n\n"
     )

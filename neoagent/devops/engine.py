@@ -18,7 +18,12 @@ from typing import Any
 
 from ..skills.registry import SkillRegistry, get_skill_registry
 from . import feedback as fb
-from .autofix import CodingBackend, NeoAgentCodingBackend, detect_oscillation
+from .autofix import (
+    RECEPTION_PROTOCOL,
+    CodingBackend,
+    NeoAgentCodingBackend,
+    detect_oscillation,
+)
 from .config import DevOpsConfig
 from .gates import pipeline_gate, review_gate
 from .harness import (
@@ -34,6 +39,7 @@ from .metrics import compute_devops_metrics
 from .models import (
     FailureKind,
     Finding,
+    FindingCategory,
     FindingStatus,
     LoopRecord,
     Mode,
@@ -51,6 +57,15 @@ from .release import (
     run_progressive_release,
     validate_release_version,
 )
+from .review import (
+    ReviewProtocol,
+    Verdict,
+    build_decision_brief,
+    catalog_summary,
+    decide_verdict,
+    offending_code_unchanged,
+)
+from .review.record import round_summary, write_record
 from .reviewers import BugPatternReviewer, Reviewer, apply_density_cap
 from .risk import classify_change_risk, missing_approvals
 from .vcs import count_changed_lines, diff_against
@@ -179,6 +194,7 @@ class DevOpsEngine:
             bundle = self.skills.build_context_bundle(build_skills)
             outcome = coder.implement_feature(loop, brief_path, self.root, skill_context=bundle)
             loop.total_cost_usd += outcome.cost_usd
+            self._note_author_session(loop, outcome)
             loop.evidence["last_coding"] = {
                 "summary": outcome.summary,
                 "modified_files": outcome.modified_files,
@@ -214,13 +230,27 @@ class DevOpsEngine:
                 f"{loop.id}: cannot review from stage '{loop.stage.value}' (expected build/review)"
             )
 
-        round_no = loop.review_rounds + 1
+        # A review *round* is one execution of the review, so records stay unique even when a
+        # pipeline repair sends the loop back through REVIEW without a review-budget increment.
+        round_no = len(loop.evidence.get("review_protocol", [])) + 1
         changed_ln = count_changed_lines(diff_text)
-        raw_fresh = self._collect_findings(reviewers, diff_text)
+
+        # Governed Review Protocol: collect -> ground -> attribute -> attest (see devops/review).
+        protocol = ReviewProtocol(self.cfg.review, self.root)
+        outcome = protocol.run(loop, diff_text, reviewers, round_no)
         capped_fresh, suppressed = apply_density_cap(
-            raw_fresh, changed_ln, self.cfg.budget.minor_density_lines
+            outcome.findings, changed_ln, self.cfg.budget.minor_density_lines
         )
-        self._merge_findings_on_rereview(loop, capped_fresh, round_no)
+        # Suppression is a reporting choice, not evidence: a finding hidden by the density cap
+        # must keep its state rather than be read as "fixed".
+        vanished_kept = self._merge_findings_on_rereview(
+            loop,
+            capped_fresh,
+            round_no,
+            diff_text=diff_text,
+            verify_vanished=self.cfg.review.verify_vanished,
+            present_fps={f.fingerprint() for f in outcome.findings},
+        )
 
         # Persist SARIF 2.1.0 & inline MR comment artifacts for IDE / GitLab / GitHub integration
         art_dir = self.ledger.artifact_dir(loop.id)
@@ -240,6 +270,21 @@ class DevOpsEngine:
             )
 
         gate = review_gate(loop, self.cfg.budget)
+        verdict = decide_verdict(loop, gate.passed)
+        summary = round_summary(
+            loop,
+            round_no,
+            outcome,
+            gate,
+            verdict,
+            density_suppressed=suppressed,
+            vanished_unverified=vanished_kept,
+            changed_lines=changed_ln,
+        )
+        loop.evidence.setdefault("review_protocol", []).append(
+            {k: v for k, v in summary.items() if k not in ("attestation", "grounding")}
+        )
+        loop.evidence.setdefault("review_attestations", []).append(summary["attestation"])
         self.ledger.log_event(
             loop,
             "review",
@@ -249,6 +294,11 @@ class DevOpsEngine:
             open_findings=len(loop.open_findings()),
             density_suppressed=suppressed,
             reviewers=[r.name for r in reviewers],
+            verdict=verdict.value,
+            introduced=summary["introduced"],
+            carried_over=summary["carried_over"],
+            fixed_by_change=summary["fixed_by_change"],
+            isolated=summary["attestation"].get("isolated"),
         )
 
         data: dict[str, Any] = {
@@ -259,7 +309,14 @@ class DevOpsEngine:
             "mr_comments_path": str(mr_path),
             "density_suppressed": suppressed,
             "evolved_patterns": evolved,
+            "verdict": verdict.value,
+            "attribution": {
+                k: summary[k] for k in ("introduced", "carried_over", "fixed_by_change", "debt")
+            },
+            "attestation": summary["attestation"],
         }
+        if self.cfg.review.write_record:
+            data["review_record"] = write_record(art_dir, loop, summary, outcome, gate)
 
         if gate.passed:
             self.ledger.transition(
@@ -281,6 +338,25 @@ class DevOpsEngine:
         data["review_rounds"] = loop.review_rounds
         brief_path = self._write_review_fix_brief(loop)
         data["fix_brief"] = str(brief_path)
+
+        # Route by who can decide: a business fact or an upstream (spec/design) defect is not
+        # something an AI fixer should guess at — escalate with the questions, not more patches.
+        if verdict in (Verdict.NEEDS_HUMAN, Verdict.REDESIGN):
+            brief = build_decision_brief(loop, verdict, loop.review_rounds)
+            decision_path = art_dir / "decision-brief.md"
+            decision_path.write_text(brief, encoding="utf-8")
+            data["decision_brief"] = decision_path.name
+            self.ledger.escalate(
+                loop,
+                f"Review verdict {verdict.value.upper()}: blocking findings need an owner's decision "
+                f"(see decision-brief.md) — automated repair halted",
+            )
+            return StepResult(
+                ESCALATED,
+                loop.stage.value,
+                f"Review verdict {verdict.value}; decision brief written, escalated to owner",
+                data,
+            )
 
         oscillating = detect_oscillation(loop)
         if oscillating:
@@ -335,21 +411,50 @@ class DevOpsEngine:
 
     @staticmethod
     def _merge_findings_on_rereview(
-        loop: LoopRecord, fresh: list[Finding], round_no: int
-    ) -> None:
-        """Engine-verified resolution: only absence on re-review marks an OPEN finding FIXED."""
+        loop: LoopRecord,
+        fresh: list[Finding],
+        round_no: int,
+        *,
+        diff_text: str = "",
+        verify_vanished: bool = True,
+        present_fps: set[str] | None = None,
+    ) -> int:
+        """Engine-verified resolution: only absence on re-review marks an OPEN finding FIXED.
+
+        A *generative* finding that merely was not repeated is not proof of a fix — reviewer
+        variance would otherwise read as progress. It stays open while its quoted code is still in
+        the diff. ``present_fps`` lists every finding the reviewers raised this round, including
+        those hidden by the density cap; those keep their state untouched. Returns how many
+        findings were kept open for the generative-variance reason.
+        """
         fresh_by_fp = {f.fingerprint(): f for f in fresh}
         existing_by_fp = {f.fingerprint(): f for f in loop.findings}
+        present = present_fps if present_fps is not None else set(fresh_by_fp)
+        kept_open = 0
 
         for fp, old in existing_by_fp.items():
+            if fp not in fresh_by_fp and fp in present:
+                continue  # raised this round but suppressed from the report: no evidence either way
             if fp in fresh_by_fp:
+                new = fresh_by_fp[fp]
                 if old.status == FindingStatus.FIXED:
                     old.status = FindingStatus.OPEN
                     old.reopened_count += 1
                     old.resolution = f"Re-opened in round {round_no} (regression)"
-                old.line = fresh_by_fp[fp].line or old.line
-                old.severity = fresh_by_fp[fp].severity
+                old.line = new.line or old.line
+                old.severity = new.severity
+                old.attribution = new.attribution or old.attribution
+                old.evidence = new.evidence or old.evidence
+                old.standard = new.standard or old.standard
             elif old.status == FindingStatus.OPEN:
+                if verify_vanished and diff_text and offending_code_unchanged(old, diff_text):
+                    kept_open += 1
+                    if not old.resolution.startswith("DISPUTED"):
+                        old.resolution = (
+                            f"Not re-reported in round {round_no}, but the quoted code is unchanged — "
+                            "kept open (reviewer variance is not a fix)"
+                        )
+                    continue
                 old.status = FindingStatus.FIXED
                 old.resolution = f"Verified absent in round {round_no} by independent reviewer"
 
@@ -357,6 +462,7 @@ class DevOpsEngine:
             if fp not in existing_by_fp:
                 f.first_seen_round = round_no
                 loop.findings.append(f)
+        return kept_open
 
     # ── Stage 4: PIPELINE (Build, Test, Coverage, 3-Way Failure Triage) ──────
 
@@ -629,6 +735,38 @@ class DevOpsEngine:
                 return loop
         raise ValueError(f"Finding not found: {finding_id}")
 
+    def respond(self, loop: LoopRecord, finding_id: str, by: str, reason: str) -> LoopRecord:
+        """Dispute a finding with evidence instead of silently ignoring or blindly 'fixing' it.
+
+        The finding stays OPEN (the author cannot close it) but is re-routed to a human decision,
+        and the next review verdict becomes NEEDS_HUMAN with the dispute quoted in the brief.
+        """
+        if not by.strip() or not reason.strip():
+            raise ValueError("Disputing a finding requires both 'by' and an evidence-backed 'reason'")
+        for f in loop.findings:
+            if f.id == finding_id:
+                f.category = FindingCategory.HUMAN_DECISION
+                f.resolution = f"DISPUTED by {by}: {reason[:300]}"
+                self.ledger.log_event(loop, "disputed", finding=finding_id, by=by)
+                self.ledger.save(loop)
+                return loop
+        raise ValueError(f"Finding not found: {finding_id}")
+
+    def _apply_disputes(self, loop: LoopRecord, disputes: dict[str, str]) -> None:
+        for fid, why in disputes.items():
+            try:
+                self.respond(loop, fid, "fixer-agent", why)
+            except ValueError:
+                continue  # a hallucinated finding id must not crash the loop
+
+    @staticmethod
+    def _note_author_session(loop: LoopRecord, outcome: Any) -> None:
+        sid = getattr(outcome, "session_id", "")
+        if sid:
+            sessions = loop.evidence.setdefault("author_sessions", [])
+            if sid not in sessions:
+                sessions.append(sid)
+
     def approve(self, loop: LoopRecord, point: str, by: str, note: str = "") -> StepResult:
         if point not in ("review", "release", "full_rollout"):
             raise ValueError("Approval point must be one of: review | release | full_rollout")
@@ -655,6 +793,24 @@ class DevOpsEngine:
         valid, _, _ = self.ledger.verify_audit_chain()
         return compute_devops_metrics(self.ledger.list_all(), chain_verified=valid)
 
+    def _measure_isolation(self) -> dict[str, Any]:
+        """Aggregate independence attestations across loops: measured, never assumed."""
+        rounds, violations = 0, []
+        for lp in self.ledger.list_all():
+            for att in lp.evidence.get("review_attestations", []):
+                rounds += 1
+                if not att.get("isolated", False):
+                    violations.append(
+                        {
+                            "loop": lp.id,
+                            "round": att.get("round"),
+                            "shared_sessions": att.get("shared_sessions", []),
+                            "forbidden_inputs": att.get("forbidden_inputs", []),
+                        }
+                    )
+        isolated: bool | None = None if rounds == 0 else not violations
+        return {"isolated": isolated, "rounds": rounds, "violations": violations[:20]}
+
     def harness_status(self) -> dict[str, Any]:
         """Return comprehensive 7-Layer Harness L1-L7 & DLP Privacy health snapshot."""
         from .privacy import scan_repository_privacy
@@ -665,6 +821,8 @@ class DevOpsEngine:
         evo = self.evolution.list_proposals()
         skill_list = self.skills.list_all()
         f1_f4_ok = sum(1 for s in skill_list if s.validate_harness().passed)
+
+        isolation = self._measure_isolation()
 
         spec_checks: list[dict[str, Any]] = []
         for cand_name, ph in (("req.md", "req"), ("srs.md", "req"), ("design.md", "design")):
@@ -693,11 +851,21 @@ class DevOpsEngine:
                     "status": "active",
                     "smart_ceiling": self.context_monitor.smart_ceiling,
                     "hard_reset_ceiling": self.context_monitor.hard_reset_ceiling,
-                    "deepseek_cot_folding": True,
+                    "reasoning_folding": True,
                 },
                 "L5_independent_evaluation": {
-                    "status": "active",
-                    "generator_evaluator_isolated": True,
+                    "status": "active" if isolation["isolated"] is not False else "violation",
+                    # True / False are *measured* from per-round attestations; None = no review yet.
+                    "generator_evaluator_isolated": isolation["isolated"],
+                    "attested_review_rounds": isolation["rounds"],
+                    "isolation_violations": isolation["violations"],
+                    "review_protocol": {
+                        "attribution": self.cfg.review.attribution,
+                        "carried_over_policy": self.cfg.review.carried_over_policy,
+                        "ground_llm_findings": self.cfg.review.ground_llm_findings,
+                        "verify_vanished": self.cfg.review.verify_vanished,
+                        "rule_catalog": catalog_summary(),
+                    },
                     "spec_checks": spec_checks,
                 },
                 "L6_mechanical_constraints_and_dlp": {
@@ -773,6 +941,8 @@ class DevOpsEngine:
                         loop, fix_brief, self.root, loop.review_rounds, skill_context=bundle
                     )
                     loop.total_cost_usd += fix_out.cost_usd
+                    self._note_author_session(loop, fix_out)
+                    self._apply_disputes(loop, fix_out.disputes)
                     if fix_out.diff_override is not None:
                         loop.evidence["latest_diff"] = fix_out.diff_override
                     self.ledger.save(loop)
@@ -802,6 +972,7 @@ class DevOpsEngine:
                         loop, fix_brief, self.root, loop.pipeline_fixes, skill_context=bundle
                     )
                     loop.total_cost_usd += fix_out.cost_usd
+                    self._note_author_session(loop, fix_out)
                     if fix_out.diff_override is not None:
                         loop.evidence["latest_diff"] = fix_out.diff_override
                     self.ledger.save(loop)
@@ -858,12 +1029,34 @@ class DevOpsEngine:
             "the independent Reviewer engine will verify their disappearance on the next diff.",
             "",
         ]
-        for f in sorted(loop.open_findings(), key=lambda x: -x.severity.rank):
+        ordered = sorted(loop.open_findings(), key=lambda x: -x.severity.rank)
+
+        def _entry(f: Finding) -> str:
             loc = f"{f.file}:{f.line}" if f.file else "diff"
+            ref = f" ({f.standard})" if f.standard else ""
+            tag = f" _[{f.attribution}]_" if f.attribution else ""
+            ev = f"\n  - Evidence: `{f.evidence[:120]}`" if f.evidence else ""
             sug = f"\n  - Fix advice: {f.suggestion}" if f.suggestion else ""
-            lines.append(f"- **[{f.severity.value.upper()}]** `{f.id}` `{f.rule}` @ `{loc}`: {f.message}{sug}")
+            return (
+                f"- **[{f.severity.value.upper()}]** `{f.id}` `{f.rule}`{ref}{tag} @ `{loc}`: "
+                f"{f.message}{ev}{sug}"
+            )
+
+        fixable = [f for f in ordered if f.category.auto_fixable]
+        human = [f for f in ordered if not f.category.auto_fixable]
+        if human:
+            lines.append("## Fix these (AI-repairable)")
+        lines.extend(_entry(f) for f in fixable)
+        if human:
+            lines += [
+                "",
+                "## Do NOT attempt these — they need an owner's decision",
+                *(_entry(f) for f in human),
+            ]
         lines.extend(
             [
+                "",
+                RECEPTION_PROTOCOL,
                 "",
                 "## Hard Anti-Cheat Guardrails",
                 "- NEVER delete or weaken assertions, add skip/xfail/noqa, or lower coverage thresholds (CRITICAL block).",
