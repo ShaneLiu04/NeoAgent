@@ -26,21 +26,21 @@ DEMO_NAME = "payment-gateway"
 
 # (category, skill-name, description, body-bullets)
 _SKILLS: list[tuple[str, str, str, list[str]]] = [
-    ("01-engineering", "devflow-tdd", "Use when implementing any feature or bugfix: write the failing test first (RED), then minimal code (GREEN), then refactor.", ["Write a failing test before any production code.", "Keep each cycle under 15 minutes.", "Never weaken an assertion to make a test pass."]),
-    ("01-engineering", "devflow-clean-code", "Use when writing or reviewing Python/TypeScript code for readability, naming, and function size.", ["Functions do one thing and stay under 40 lines.", "Prefer explicit type annotations.", "No mutable default arguments."]),
+    ("01-engineering", "tdd-discipline", "Use when implementing any feature or bugfix: write the failing test first (RED), then minimal code (GREEN), then refactor.", ["Write a failing test before any production code.", "Keep each cycle under 15 minutes.", "Never weaken an assertion to make a test pass."]),
+    ("01-engineering", "clean-code", "Use when writing or reviewing Python/TypeScript code for readability, naming, and function size.", ["Functions do one thing and stay under 50 lines.", "Prefer explicit type annotations.", "No mutable default arguments."]),
     ("01-engineering", "python-coding-standards", "Use when touching .py files: typing, exceptions, immutability and import hygiene rules.", ["Catch narrow exceptions only.", "Use pathlib over os.path.", "Prefer dataclasses for value objects."]),
-    ("01-engineering", "harness-skill-creator", "Use when authoring or optimising a Skill so it follows the 7-layer Harness F1-F4 rules.", ["Frontmatter must carry name and description.", "name must equal the directory name.", "Keep SKILL.md under 500 lines; push detail into references/."]),
+    ("01-engineering", "skill-creator", "Use when authoring or optimising a Skill so it follows the 7-layer Harness F1-F4 rules.", ["Frontmatter must carry name and description.", "name must equal the directory name.", "Keep SKILL.md under 500 lines; push detail into references/."]),
     ("02-quality", "code-review", "Use when reviewing a diff: severity ladder, evidence-first findings, and bounded Minor noise.", ["Report Critical/Major first.", "Every finding cites file:line.", "Cap Minor findings per 200 changed lines."]),
     ("02-quality", "bug-pattern-checker", "Use when a defect class repeats: turn it into a reusable checklist item for the next review.", ["Append, never delete, checklist rules.", "One rule per recurring defect.", "Link the originating loop id."]),
     ("02-quality", "verification-before-completion", "Use before claiming a task is done: run the real test command and read the output.", ["Evidence before assertions.", "Paste the exact failing line.", "Re-run after every fix."]),
     ("02-quality", "systematic-debugging", "Use when a pipeline step fails: classify code defect vs env blocker before touching code.", ["Reproduce first.", "Env blockers escalate, never thrash code.", "Spec mismatches fix the implementation, not the assertion."]),
     ("03-security", "secure-coding", "Use when handling input, files, SQL or secrets: validate at the boundary and fail closed.", ["Parameterise every SQL statement.", "Confine file access to the workspace root.", "Never hardcode credentials."]),
-    ("03-security", "it-web-security-review", "Use when reviewing web endpoints for authN/authZ, injection, XSS and CSRF exposure.", ["Check every route for auth.", "Escape output by default.", "Rate-limit public endpoints."]),
-    ("04-delivery", "devflow-ship", "Use when releasing: progressive canary 5% -> 25% -> 100% with a verified rollback command.", ["Never deploy without a rollback command.", "Watch error-rate and p95 at each stage.", "Auto-rollback on SLO breach."]),
+    ("03-security", "web-security-review", "Use when reviewing web endpoints for authN/authZ, injection, XSS and CSRF exposure.", ["Check every route for auth.", "Escape output by default.", "Rate-limit public endpoints."]),
+    ("04-delivery", "progressive-release", "Use when releasing: progressive canary 5% -> 25% -> 100% with a verified rollback command.", ["Never deploy without a rollback command.", "Watch error-rate and p95 at each stage.", "Auto-rollback on SLO breach."]),
     ("04-delivery", "spec-reliability", "Use when designing observability and SLOs for a release.", ["Define SLIs before the rollout.", "Alert on burn rate.", "Document the rollback trigger."]),
-    ("05-requirements", "devflow-specify", "Use at intake: turn a vague request into scope, non-goals and acceptance criteria.", ["State explicit non-goals.", "Write acceptance criteria as Given/When/Then.", "Estimate blast radius."]),
+    ("05-requirements", "spec-driven-specify", "Use at intake: turn a vague request into scope, non-goals and acceptance criteria.", ["State explicit non-goals.", "Write acceptance criteria as Given/When/Then.", "Estimate blast radius."]),
     ("05-requirements", "brainstorming", "Use when the design space is open: enumerate options and trade-offs before choosing.", ["List at least three options.", "Score against constraints.", "Record the decision."]),
-    ("06-evolution", "devflow-learn", "Use after a release: distil lessons into the checklist and AGENTS.md via the SAFE loop.", ["Sense, Adapt, Formalize, Evaluate.", "Structural change needs human approval.", "Every change has a rollback hint."]),
+    ("06-evolution", "postmortem-learn", "Use after a release: distil lessons into the checklist and AGENTS.md via the SAFE loop.", ["Sense, Adapt, Formalize, Evaluate.", "Structural change needs human approval.", "Every change has a rollback hint."]),
 ]
 
 _CALC_V1 = "def add(a: int, b: int) -> int:\n    return a + b\n"
@@ -212,6 +212,75 @@ def review_round2_edit(repo: Path) -> None:
     (repo / "billing" / "limits.py").write_text(_BILLING_LIMITS, encoding="utf-8")
     # Stage only the code the change owns (not the untracked CLI-generated devops.toml).
     _git(repo, "add", "svc", "tests", "billing")
+
+
+# ── Blueprint & standards scenario: existing pricing module + an AI-written change with code smells ──
+_PRICING_BASE = (
+    "def compute_total(prices: list[float]) -> float:\n"
+    '    """Sum the line prices of an order."""\n'
+    "    return round(sum(prices), 2)\n\n\n"
+    "def legacy_tax(amount, rate, region, flag, mode, extra, other):\n"
+    "    try:\n"
+    "        return amount * rate\n"
+    "    except:\n"
+    "        pass\n"
+)
+_PRICING_TEST_BASE = (
+    "from app.pricing import compute_total\n\n\n"
+    "def test_compute_total():\n"
+    "    assert compute_total([10.0, 5.5]) == 15.5\n"
+)
+# AI-written change: legacy_tax only gains type hints (its smells are carried over and must not be
+# blamed on the author), while volume_discount introduces a fresh bundle of smells.
+_PRICING_AI = (
+    "def compute_total(prices: list[float]) -> float:\n"
+    '    """Sum the line prices of an order."""\n'
+    "    return round(sum(prices), 2)\n\n\n"
+    "def legacy_tax(amount: float, rate: float, region, flag, mode, extra, other):\n"
+    "    try:\n"
+    "        return amount * rate\n"
+    "    except:\n"
+    "        pass\n\n\n"
+    "def volume_discount(total, qty, tier, region, flag, mode, cache={}):\n"
+    "    # debt: quick hack\n"
+    "    for _ in range(1):\n"
+    "        try:\n"
+    "            if qty > 100:\n"
+    "                if tier == 'gold':\n"
+    "                    if total > 1000:\n"
+    "                        return total * 0.8\n"
+    "        except Exception:\n"
+    "            pass\n"
+    "    return total\n"
+)
+
+
+def build_blueprint_demo(base: Path) -> tuple[Path, Path]:
+    """Create the synthetic ``payment-gateway`` repo used by the blueprint & standards showcase."""
+    repo = base / DEMO_NAME
+    (repo / "app").mkdir(parents=True, exist_ok=True)
+    (repo / "tests").mkdir(exist_ok=True)
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "dev@example.org")
+    _git(repo, "config", "user.name", "Demo Engineer")
+    (repo / ".gitignore").write_text(".neoagent-devops/\n__pycache__/\n.pytest_cache/\n", encoding="utf-8")
+    (repo / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (repo / "app" / "pricing.py").write_text(_PRICING_BASE, encoding="utf-8")
+    (repo / "tests" / "test_pricing.py").write_text(_PRICING_TEST_BASE, encoding="utf-8")
+    py = sys.executable.replace("\\", "/")
+    (repo / "devops.toml").write_text(
+        '[project]\nbase_branch = "main"\n\n'
+        f'[[pipeline.steps]]\nname = "pytest"\ncmd = ["{py}", "-m", "pytest", "tests", "-q"]\n',
+        encoding="utf-8",
+    )
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Initial baseline")
+    return repo, build_skill_pack(base / "skills")
+
+
+def apply_blueprint_ai_change(repo: Path) -> None:
+    """The AI-written, uncommitted change that the standards review inspects."""
+    (repo / "app" / "pricing.py").write_text(_PRICING_AI, encoding="utf-8")
 
 
 def feedback_jsonl() -> str:

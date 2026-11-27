@@ -1,13 +1,12 @@
 """Progressive-disclosure SKILL.md registry, Harness F1-F4 validator, and stage router.
 
-Implements the 3-tier progressive disclosure pattern from ``harness-skill-creator``
-and ``it-project-initializer``:
+Implements the 3-tier progressive disclosure pattern for modular engineering skills:
   - Tier 1 (Catalog): ~40 tokens/skill (name + 1-line summary) for broad discovery
   - Tier 2 (Activation): Full ``SKILL.md`` body + ``interface.json`` contract
   - Tier 3 (Reference): On-demand ``references/*.md`` rubrics & language standards
 
-This prevents blowing up the 40% LLM context budget when mounting a 90+ skill
-enterprise repository.
+This prevents blowing up the 40% LLM context budget when mounting a large
+skill repository.
 """
 
 from __future__ import annotations
@@ -178,29 +177,24 @@ class SkillDescriptor:
 # Vendor-neutral lifecycle stage -> canonical skill & capability routing
 STAGE_SKILL_PLAYBOOK: dict[str, list[str]] = {
     "intake": [
-        "using-devflow",
-        "devflow-specify",
-        "sdd-router",
-        "sdd-task-requirements",
-        "it-project-initializer",
+        "spec-driven-specify",
+        "spec-driven-design",
+        "project-initializer",
         "brainstorming",
     ],
     "build": [
-        "devflow-tdd",
-        "devflow-clean-code",
-        "sdd-task-develop",
+        "tdd-discipline",
+        "clean-code",
+        "minimal-code",
         "subagent-driven-development",
         "secure-coding",
-        "lazy-coding",
         "test-driven-development",
     ],
     "review": [
-        "devflow-review",
-        "sdd-task-review",
         "code-review",
         "bug-pattern-checker",
         "secure-coding",
-        "it-web-security-review",
+        "web-security-review",
     ],
     "pipeline": [
         "api-test-debug",
@@ -209,8 +203,7 @@ STAGE_SKILL_PLAYBOOK: dict[str, list[str]] = {
         "ut-coverage-booster",
     ],
     "release": [
-        "devflow-ship",
-        "sdd-task-st",
+        "progressive-release",
         "finishing-a-development-branch",
         "spec-reliability",
     ],
@@ -219,8 +212,8 @@ STAGE_SKILL_PLAYBOOK: dict[str, list[str]] = {
         "systematic-debugging",
     ],
     "learn": [
-        "devflow-learn",
-        "harness-skill-creator",
+        "postmortem-learn",
+        "skill-creator",
         "bug-pattern-checker",
         "unified-memory",
     ],
@@ -244,14 +237,14 @@ EXTENSION_SKILL_MAP: dict[str, list[str]] = {
     ".cpp": ["cpp-coding-standards", "code-review"],
     ".cc": ["cpp-coding-standards", "code-review"],
     ".hpp": ["cpp-coding-standards"],
-    ".java": ["secure-coding", "it-web-security-review", "code-review"],
-    ".sql": ["secure-coding", "it-web-security-review"],
-    ".ts": ["it-web-security-review", "secure-coding"],
-    ".tsx": ["it-web-security-review", "secure-coding"],
-    ".vue": ["it-web-security-review", "secure-coding"],
-    ".js": ["it-web-security-review", "secure-coding"],
-    ".go": ["secure-coding", "code-review"],
-    ".rs": ["secure-coding", "code-review"],
+    ".java": ["java-coding-standards", "secure-coding", "web-security-review", "code-review"],
+    ".sql": ["sql-coding-standards", "secure-coding", "web-security-review"],
+    ".ts": ["typescript-coding-standards", "web-security-review", "secure-coding"],
+    ".tsx": ["typescript-coding-standards", "web-security-review", "secure-coding"],
+    ".vue": ["web-security-review", "secure-coding"],
+    ".js": ["javascript-coding-standards", "web-security-review", "secure-coding"],
+    ".go": ["go-coding-standards", "secure-coding", "code-review"],
+    ".rs": ["rust-coding-standards", "secure-coding", "code-review"],
 }
 
 EXTENSION_DYNAMIC_KEYWORDS: dict[str, str] = {

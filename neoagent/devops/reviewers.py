@@ -773,6 +773,7 @@ def build_review_chain(
         TestEvidenceReviewer,
         WeakTestReviewer,
     )
+    from .standards import CleanCodeReviewer
 
     chain: list[Reviewer] = [
         StaticASTReviewer(privacy_policy=privacy_policy),
@@ -784,12 +785,22 @@ def build_review_chain(
             ContractDriftReviewer(),
             TestEvidenceReviewer(),
             WeakTestReviewer(),
+            CleanCodeReviewer(),
         ]
     warnings: list[str] = []
     for raw in names:
         n = raw.strip().lower()
         if n in (
-            "static", "static-ast", "bug-patterns", "security", "contract", "test-evidence", "weak-tests", "",
+            "static",
+            "static-ast",
+            "bug-patterns",
+            "security",
+            "contract",
+            "test-evidence",
+            "weak-tests",
+            "clean-code",
+            "standards",
+            "",
         ):
             continue
         if n in ("neoagent", "neoagent-skills", "llm"):

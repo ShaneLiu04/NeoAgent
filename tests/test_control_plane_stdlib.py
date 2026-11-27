@@ -34,6 +34,8 @@ print("ok")
 
 CONTROL_PLANE = [
     "neoagent.devops.engine",
+    "neoagent.devops.blueprint",
+    "neoagent.devops.standards",
     "neoagent.cli.devops_cli",
     "neoagent.desktop.server",
     "neoagent.mcp.server",

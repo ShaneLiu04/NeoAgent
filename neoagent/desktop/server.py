@@ -173,10 +173,22 @@ def _make_handler(state: DesktopState) -> type[BaseHTTPRequestHandler]:
                             if art_dir.is_dir()
                             else []
                         )
+                        bp_dir = art_dir / "blueprint"
+                        if bp_dir.is_dir():
+                            artifacts.extend(
+                                f"blueprint/{p.name}"
+                                for p in sorted(bp_dir.iterdir())
+                                if p.is_file() and p.suffix == ".md"
+                            )
+                        bp_status = eng.blueprint_status(lp) if eng.blueprint_workspace(lp.id).exists() else None
                         self._send_json(
                             HTTPStatus.OK,
-                            {"loop": lp.to_dict(), "artifacts": artifacts},
+                            {"loop": lp.to_dict(), "artifacts": artifacts, "blueprint": bp_status},
                         )
+                        return
+
+                    if len(parts) == 4 and parts[3] == "blueprint":
+                        self._send_json(HTTPStatus.OK, eng.blueprint_status(lp))
                         return
 
                     if len(parts) == 4 and parts[3] == "artifact":
@@ -232,6 +244,14 @@ def _make_handler(state: DesktopState) -> type[BaseHTTPRequestHandler]:
 
                 if path == "/api/harness":
                     self._send_json(HTTPStatus.OK, state.engine().harness_status())
+                    return
+
+                if path == "/api/standards":
+                    files_raw = (qs.get("files") or [""])[0]
+                    files = [f.strip() for f in files_raw.split(",") if f.strip()]
+                    stage = (qs.get("stage") or ["build"])[0]
+                    qstack = state.engine().compile_quality_stack(files=files, stage=stage)
+                    self._send_json(HTTPStatus.OK, qstack.to_dict())
                     return
 
                 if path == "/api/metrics":
@@ -474,6 +494,31 @@ def _make_handler(state: DesktopState) -> type[BaseHTTPRequestHandler]:
             elif act == "resume":
                 to_stage = Stage(body["to"]) if body.get("to") else None
                 res = eng.resume(lp, str(body.get("by") or "engineer"), to_stage)
+            elif act == "blueprint":
+                reqs = list(body.get("requirements") or []) or None
+                res = eng.blueprint(
+                    lp,
+                    requirements=reqs,
+                    requested_lite=bool(body.get("requested_lite", False)),
+                    selected_option=str(body.get("selected_option") or "A"),
+                )
+            elif act == "gate":
+                res = eng.run_phase_gate(
+                    lp,
+                    str(body.get("phase") or "spec"),
+                    force_by=str(body.get("force_by") or ""),
+                )
+            elif act == "next_task":
+                from ..devops.blueprint import ScriptedTaskImplementer
+
+                impl = ScriptedTaskImplementer() if body.get("scripted", True) else None
+                res = eng.execute_blueprint_tasks(
+                    lp,
+                    implementer=impl,
+                    max_tasks=int(body["max_tasks"]) if body.get("max_tasks") else None,
+                )
+            elif act == "acceptance":
+                res = eng.run_acceptance(lp, acceptance_cmd=str(body.get("cmd") or ""))
             elif act == "autopilot":
                 bundle = state.skills.build_context_bundle(lp.activated_skills)
                 chain, _ = build_review_chain(

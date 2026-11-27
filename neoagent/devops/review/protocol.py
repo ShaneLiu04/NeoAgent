@@ -111,7 +111,7 @@ class ReviewProtocol:
     # ── Orchestration ────────────────────────────────────────────────────────
 
     def contextual_reviewers(self, loop: LoopRecord, reviewers: list[Reviewer]) -> list[Reviewer]:
-        """Reviewers that need the loop's own declarations (its scope), added on top of the chain."""
+        """Reviewers that need the loop's own declarations (scope & Blueprint), added on top of the chain."""
         extra: list[Reviewer] = []
         if (
             self.cfg.scope_drift
@@ -119,12 +119,21 @@ class ReviewProtocol:
             and not any(isinstance(r, ScopeDriftReviewer) for r in reviewers)
         ):
             extra.append(ScopeDriftReviewer(loop.files))
+        if self.cfg.sdc_compliance and loop.evidence.get("blueprint"):
+            bp_dir = self.root / ".neoagent-devops" / "artifacts" / loop.id / "blueprint"
+            if (bp_dir / "blueprint-state.json").is_file():
+                extra.append(_BlueprintSDCReviewer(bp_dir))
         return extra
 
     def run(
         self, loop: LoopRecord, diff_text: str, reviewers: list[Reviewer], round_no: int
     ) -> ReviewOutcome:
-        chain = [*reviewers, *self.contextual_reviewers(loop, reviewers)]
+        active_reviewers = (
+            [r for r in reviewers if getattr(r, "name", "") != "clean-code"]
+            if not self.cfg.clean_code
+            else list(reviewers)
+        )
+        chain = [*active_reviewers, *self.contextual_reviewers(loop, active_reviewers)]
         raw = collect_findings(chain, diff_text, self.root)
         fill_evidence(raw, diff_text)
 
@@ -239,7 +248,46 @@ _DECISIONS: dict[str, tuple[str, str]] = {
         "A public function was removed. Does anything still depend on it?",
         "(a) restore it (or a deprecated shim); (b) confirm there are no callers and record the removal",
     ),
+    "sdc-missing-interface": (
+        "An interface contract declared in `design.md` is missing in code. Did the design change?",
+        "(a) implement the declared interface symbol; (b) update `design.md` and re-pass Design Gate",
+    ),
+    "sdc-undeclared-file-touch": (
+        "Production files outside the approved `design.md` / `tasks.md` plan were modified.",
+        "(a) revert out-of-plan edits; (b) revise `design.md` & `tasks.md` to record the expanded blast radius",
+    ),
 }
+
+
+class _BlueprintSDCReviewer:
+    """Contextual 3D Spec / Design / Code compliance reviewer when a loop has an active Blueprint."""
+
+    name = "blueprint-sdc"
+    deterministic = True
+    attributable = False
+    reads_worktree = True
+    context_inputs = ("diff", "blueprint_contracts", "worktree_sources")
+
+    def __init__(self, blueprint_dir: Path) -> None:
+        self.blueprint_dir = blueprint_dir
+
+    def review(self, diff_text: str, repo_root: Path | None = None) -> list[Finding]:
+        from ..blueprint import BlueprintPhaseGate, BlueprintWorkspace
+
+        ws = BlueprintWorkspace(self.blueprint_dir)
+        spec = ws.load_spec()
+        plan = ws.load_plan()
+        if spec is None or plan is None:
+            return []
+        _, findings = BlueprintPhaseGate.verify_sdc(
+            spec=spec,
+            design=ws.load_design(),
+            plan=plan,
+            trace=ws.load_traceability(),
+            diff_text=diff_text,
+            repo_root=repo_root,
+        )
+        return findings
 
 
 def build_decision_brief(loop: LoopRecord, verdict: Verdict, round_no: int) -> str:

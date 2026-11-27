@@ -116,6 +116,8 @@ class ReviewProtocolConfig:
     deep_audit: bool = False              # also audit whole touched files; file old issues as debt
     verify_vanished: bool = True          # an LLM finding is only "fixed" if its code really changed
     write_record: bool = True             # persist review-record-rN.md for every round
+    clean_code: bool = True               # run deterministic Clean-Code & Language-Standards AST inspector
+    sdc_compliance: bool = True           # run 3D Spec/Design/Code compliance when loop has a Blueprint
 
 
 @dataclass
@@ -225,6 +227,8 @@ scope_drift = true              # flag files changed outside the loop's declared
 deep_audit = false              # audit whole touched files; pre-existing issues become debt, not blockers
 verify_vanished = true          # an LLM finding is only fixed if its code actually changed
 write_record = true             # persist review-record-rN.md for every round
+clean_code = true               # enforce 5D Clean-Code & Language-Standards AST guardrails
+sdc_compliance = true           # verify 3D Spec/Design/Code compliance when Blueprint exists
 
 [pipeline]
 coverage_min = 0

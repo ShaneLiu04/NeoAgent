@@ -188,6 +188,7 @@
 
             <div class="action-row" id="ld-actions">
               <div class="seg seg-lg">
+                <button class="seg-item" data-laction="blueprint">需求蓝图</button>
                 <button class="seg-item" data-laction="build">编码</button>
                 <button class="seg-item" data-laction="review">检视</button>
                 <button class="seg-item" data-laction="pipeline">流水线</button>
@@ -199,6 +200,11 @@
             </div>
 
             <div class="activity hidden" id="ld-last-msg"></div>
+
+            <div class="group hidden" id="ld-blueprint-group">
+              <div class="group-hdr">需求分解与阶段门禁 <span class="muted">EARS · 6段接口契约 · TC-* · 隔离式 TDD DAG</span></div>
+              <div class="card protocol-card" id="ld-blueprint"></div>
+            </div>
 
             <div class="group hidden" id="ld-protocol-group">
               <div class="group-hdr">检视协议 <span class="muted">归因 · 独立性证明 · 分流</span></div>
@@ -373,6 +379,7 @@
       <p class="muted small">NeoAgent 将自动定级风险、选择 SDD 轨道并挂载对应技能。</p>
       <label class="field"><span>标题</span><input id="nl-title" type="text" placeholder="例如：Add apply_discount pricing calculation" /></label>
       <label class="field"><span>涉及文件</span><input id="nl-files" type="text" placeholder="逗号分隔；留空则从 Git Diff 推断" /></label>
+      <label class="field"><span>需求条目（可选）</span><input id="nl-reqs" type="text" placeholder="分号分隔多条需求，供「需求蓝图」拆解；留空则以标题为单条需求" /></label>
       <div class="field">
         <span>运行模式</span>
         <div class="seg" id="nl-mode">

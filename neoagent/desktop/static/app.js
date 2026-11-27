@@ -212,22 +212,87 @@ function renderProtocol(loop) {
     .join("");
 }
 
+function renderBlueprint(blueprint) {
+  const grp = $("ld-blueprint-group");
+  const box = $("ld-blueprint");
+  if (!grp || !box) return;
+  grp.classList.toggle("hidden", !blueprint);
+  if (!blueprint) return;
+
+  const gates = blueprint.gate_verdicts || {};
+  const gateChips = Object.entries(gates)
+    .map(([ph, v]) => `<span class="badge ${v === "PASS" ? "ok" : "danger"}">${escapeHtml(ph.toUpperCase())}: ${escapeHtml(v)}</span>`)
+    .join(" ") || `<span class="muted small">尚未执行门禁</span>`;
+
+  const tasks = (blueprint.tasks || [])
+    .map((t) => {
+      const cls = t.status === "passing" ? "ok" : t.status === "blocked" || t.status === "failed" ? "danger" : t.status === "in_progress" ? "warn" : "";
+      const deps = (t.depends_on || []).length ? `deps:${t.depends_on.join(",")}` : "root";
+      return `<div class="row" style="padding:8px 12px;">
+        <div class="row-main">
+          <div class="row-title"><code>${escapeHtml(t.id)}</code> ${escapeHtml(t.title)}
+            <span class="badge">${escapeHtml(t.granularity)}</span>
+            <span class="badge">${escapeHtml(t.model_tier || "standard")}</span>
+            <span class="muted small mono">${escapeHtml(deps)}</span>
+          </div>
+          <div class="row-sub muted small">覆盖需求: ${escapeHtml((t.covers_reqs || []).join(", ") || "—")} · 用例: ${escapeHtml((t.covers_cases || []).join(", ") || "—")}</div>
+          ${t.green_session ? `<div class="row-sub muted small mono">${t.red_session && t.red_session !== t.green_session ? `RED ${escapeHtml(t.red_session)} → GREEN ${escapeHtml(t.green_session)}` : `fresh session ${escapeHtml(t.green_session)}`}</div>` : ""}
+        </div>
+        <span class="badge ${cls}">${escapeHtml(t.status)}</span>
+      </div>`;
+    })
+    .join("");
+
+  box.innerHTML = `
+    <div class="row">
+      <div class="row-main">
+        <div class="row-title">当前路由阶段 <span class="badge ok">${escapeHtml(blueprint.phase)}</span> · 轨道 <code>${escapeHtml(blueprint.track)}</code> · 任务进度 <b>${escapeHtml(blueprint.passing_tasks)}/${escapeHtml(blueprint.total_tasks)}</b></div>
+        <div class="row-sub">${gateChips}</div>
+        <div class="row-sub muted small">${escapeHtml(blueprint.reason || "")}</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn sm" data-bp-act="next_task">推进 TDD 任务</button>
+        <button class="btn sm" data-bp-act="sdc">S/D/C 审查</button>
+        <button class="btn sm" data-bp-act="acceptance">验收归档</button>
+      </div>
+    </div>
+    ${tasks}`;
+
+  box.querySelectorAll("[data-bp-act]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const act = btn.dataset.bpAct;
+      const payload = act === "sdc" ? { action: "gate", phase: "sdc" } : { action: act };
+      const label = { next_task: "推进 TDD 任务（Red/Green 隔离会话）", sdc: "S/D/C 合规审查", acceptance: "黑盒验收与干净归档" }[act] || act;
+      setActivity(`正在执行 ${label}…`, "running");
+      try {
+        const res = await apiPost(`/api/loops/${encodeURIComponent(state.loopId)}/action`, payload);
+        setActivity(res.message || "完成", res.code === 0 ? "ok" : "warn");
+        await refreshLoops();
+        await refreshOverview();
+      } catch (e) {
+        setActivity(e.message || String(e), "danger");
+      }
+    })
+  );
+}
+
 async function loadSelectedLoop() {
   if (!state.loopId) return;
-  const { loop, artifacts } = await apiGet(`/api/loops/${encodeURIComponent(state.loopId)}`);
+  const { loop, artifacts, blueprint } = await apiGet(`/api/loops/${encodeURIComponent(state.loopId)}`);
   renderStepper(loop.stage);
   $("ld-id").textContent = loop.id;
   $("ld-title").textContent = loop.title;
   $("ld-tier").innerHTML = tierBadge(loop.tier);
-  const route = (loop.evidence?.workflow_route?.track || "full").toUpperCase();
+  const route = (blueprint?.track || loop.evidence?.workflow_route?.track || "full").toUpperCase();
   const stageLabel = STAGE_LABELS[loop.stage] || loop.stage.toUpperCase();
   const metas = [
-    ["阶段", stageLabel], ["模式", loop.mode === "unattended" ? "自治自愈" : "有人值守"], ["SDD 轨道", route],
+    ["阶段", stageLabel], ["模式", loop.mode === "unattended" ? "自治自愈" : "有人值守"], ["蓝图轨道", route],
     ["检视轮次", loop.review_rounds], ["CI 修复", loop.pipeline_fixes],
     ["AI 成本", `$${Number(loop.total_cost_usd || 0).toFixed(3)}`],
   ];
   $("ld-meta").innerHTML = metas.map(([k, v]) => `<span class="meta">${k} <b>${escapeHtml(v)}</b></span>`).join("");
 
+  renderBlueprint(blueprint);
   renderProtocol(loop);
 
   const findings = loop.findings || [];
@@ -316,7 +381,10 @@ $("btn-create-loop").addEventListener("click", async () => {
   const files = filesRaw ? filesRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
   const { loop } = await apiPost("/api/loops", { title, files, mode: state.mode, from_git: $("nl-git").checked });
   state.loopId = loop.id;
+  const reqs = $("nl-reqs").value.split(";").map((s) => s.trim()).filter(Boolean);
+  state.blueprintReqs = { ...(state.blueprintReqs || {}), [loop.id]: reqs };
   $("nl-title").value = "";
+  $("nl-reqs").value = "";
   closeSheet();
   await refreshOverview();
   await refreshLoops();
@@ -324,7 +392,10 @@ $("btn-create-loop").addEventListener("click", async () => {
   toast(`闭环 ${loop.id} 已创建`);
 });
 
-const ACTION_LABELS = { build: "编码", review: "独立检视", pipeline: "流水线", release: "金丝雀发布", autopilot: "Autopilot 全自动推进" };
+const ACTION_LABELS = {
+  build: "编码", review: "独立检视", pipeline: "流水线", release: "金丝雀发布", autopilot: "Autopilot 全自动推进",
+  blueprint: "需求蓝图合成",
+};
 document.querySelectorAll("[data-laction]").forEach((btn) =>
   btn.addEventListener("click", async () => {
     if (!state.loopId) return toast("请先创建或选择一个闭环", "warn");
@@ -332,7 +403,9 @@ document.querySelectorAll("[data-laction]").forEach((btn) =>
     btn.classList.add("running");
     setActivity(`正在执行 ${ACTION_LABELS[action]}…`);
     try {
-      const res = await apiPost(`/api/loops/${encodeURIComponent(state.loopId)}/action`, { action, version: "v0.1.0", dry_run: true });
+      const body = { action, version: "v0.1.0", dry_run: true };
+      if (action === "blueprint") body.requirements = (state.blueprintReqs || {})[state.loopId] || [];
+      const res = await apiPost(`/api/loops/${encodeURIComponent(state.loopId)}/action`, body);
       const ok = res.code === 0;
       setActivity(`${ACTION_LABELS[action]} · ${(STAGE_LABELS[res.stage] || res.stage).toString()} — ${res.message}`, ok ? "ok" : "warn");
       await refreshLoops();

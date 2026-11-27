@@ -188,6 +188,44 @@ class MCPDevOpsServer:
                     },
                 },
             },
+            {
+                "name": "devops_blueprint",
+                "description": "Synthesize Spec-to-Code Blueprint (`spec.md`, `design.md`, `tasks.md`, `traceability.md`) with EARS requirements, 6-part interface contracts, canonical `TC-*` test cases, and DAG task plan.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "loop_id": {"type": "string"},
+                        "requirements": {"type": "array", "items": {"type": "string"}},
+                        "requested_lite": {"type": "boolean", "default": False},
+                        "selected_option": {"type": "string", "default": "A"},
+                    },
+                    "required": ["loop_id"],
+                },
+            },
+            {
+                "name": "devops_phase_gate",
+                "description": "Run independent read-only Blueprint Phase Gate (`spec`, `design`, `plan`, or `sdc` 3D compliance).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "loop_id": {"type": "string"},
+                        "phase": {"type": "string", "enum": ["spec", "design", "plan", "sdc"]},
+                        "force_by": {"type": "string", "default": ""},
+                    },
+                    "required": ["loop_id", "phase"],
+                },
+            },
+            {
+                "name": "standards_compile",
+                "description": "Compile the 3-Layer Coding Standards Quality Stack (5D Clean-Code Floor + 7-Rung Minimal-Code Ladder + Language Guardrails) within the <40% context budget.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "files": {"type": "array", "items": {"type": "string"}},
+                        "stage": {"type": "string", "default": "build"},
+                    },
+                },
+            },
         ]
 
     @staticmethod
@@ -361,6 +399,32 @@ class MCPDevOpsServer:
             if created:
                 diag = RepoScaffold.diagnose(self.root)
             return self._ok_json({"diagnosis": diag.to_dict(), "created": created})
+
+        if name == "devops_blueprint":
+            lp = eng.ledger.load(str(args["loop_id"]))
+            res = eng.blueprint(
+                lp,
+                requirements=list(args.get("requirements") or []) or None,
+                requested_lite=bool(args.get("requested_lite", False)),
+                selected_option=str(args.get("selected_option", "A")),
+            )
+            return self._ok_json(res.to_dict())
+
+        if name == "devops_phase_gate":
+            lp = eng.ledger.load(str(args["loop_id"]))
+            res = eng.run_phase_gate(
+                lp,
+                str(args["phase"]),
+                force_by=str(args.get("force_by", "")),
+            )
+            return self._ok_json(res.to_dict())
+
+        if name == "standards_compile":
+            qstack = eng.compile_quality_stack(
+                files=list(args.get("files") or []),
+                stage=str(args.get("stage", "build")),
+            )
+            return self._ok_json(qstack.to_dict())
 
         return self._err_text(f"Unknown tool: {name}")
 

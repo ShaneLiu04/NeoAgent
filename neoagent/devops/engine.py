@@ -24,6 +24,17 @@ from .autofix import (
     NeoAgentCodingBackend,
     detect_oscillation,
 )
+from .blueprint import (
+    AcceptanceVerifier,
+    BlueprintBackend,
+    BlueprintPhaseGate,
+    BlueprintWorkspace,
+    NeoAgentBlueprintBackend,
+    TaskImplementerBackend,
+    TaskTDDController,
+    build_compaction_snapshot,
+    detect_phase,
+)
 from .config import DevOpsConfig
 from .gates import pipeline_gate, review_gate
 from .harness import (
@@ -68,6 +79,7 @@ from .review import (
 from .review.record import round_summary, write_record
 from .reviewers import BugPatternReviewer, Reviewer, apply_density_cap
 from .risk import classify_change_risk, missing_approvals
+from .standards import LANGUAGE_STANDARDS, QualityStackBundle, QualityStackCompiler
 from .vcs import count_changed_lines, diff_against
 
 OK, USAGE, GATE_FAILED, WAITING, ESCALATED = 0, 1, 2, 3, 4
@@ -162,6 +174,307 @@ class DevOpsEngine:
         brief_path = art_dir / "task-brief.md"
         brief_path.write_text(self._render_task_brief(loop), encoding="utf-8")
         return loop
+
+    # ── Stage 1.5: Spec-to-Code Blueprint, Phase Gates & Isolated Subagent TDD ──
+
+    def blueprint_workspace(self, loop_id: str) -> BlueprintWorkspace:
+        return BlueprintWorkspace(self.ledger.artifact_dir(loop_id) / "blueprint")
+
+    def blueprint_status(self, loop: LoopRecord) -> dict[str, Any]:
+        ws = self.blueprint_workspace(loop.id)
+        snap = detect_phase(ws)
+        res = snap.to_dict()
+        res["artifacts_dir"] = str(ws.dir)
+        res["compaction_snapshot"] = build_compaction_snapshot(ws)
+        plan = ws.load_plan()
+        if plan is not None:
+            res["tasks"] = [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "granularity": t.granularity.value,
+                    "status": t.status.value,
+                    "depends_on": list(t.depends_on),
+                    "covers_reqs": list(t.covers_reqs),
+                    "covers_cases": list(t.covers_cases),
+                    "model_tier": t.model_tier,
+                    "red_session": t.evidence.red_session_id if t.evidence else "",
+                    "green_session": t.evidence.green_session_id if t.evidence else "",
+                }
+                for t in plan.tasks
+            ]
+        return res
+
+    def compile_quality_stack(
+        self,
+        *,
+        files: list[str] | None = None,
+        stage: str = "build",
+        max_chars: int = 10_000,
+    ) -> QualityStackBundle:
+        compiler = QualityStackCompiler(skill_registry=self.skills)
+        return compiler.compile(
+            repo_root=self.root,
+            files=list(files or []),
+            stage=stage,
+            max_chars=max_chars,
+        )
+
+    def blueprint(
+        self,
+        loop: LoopRecord,
+        *,
+        requirements: list[str] | None = None,
+        requested_lite: bool = False,
+        selected_option: str = "A",
+        clarifications: dict[str, str] | None = None,
+        strict_clarify: bool = False,
+        auto_gate: bool = True,
+        backend: BlueprintBackend | None = None,
+    ) -> StepResult:
+        """Synthesize `spec.md`/`lite.md`, `design.md`, `tasks.md`, and `traceability.md`."""
+        synth = backend or NeoAgentBlueprintBackend()
+        bundle = synth.synthesize(
+            loop_id=loop.id,
+            title=loop.title,
+            requirements_Input=list(requirements or [loop.title]),
+            files=list(loop.files),
+            tier=loop.tier,
+            repo_root=self.root,
+            requested_lite=requested_lite,
+            selected_option=selected_option,
+            clarifications=clarifications,
+            strict_clarify=strict_clarify,
+        )
+        ws = self.blueprint_workspace(loop.id)
+        written = ws.save(
+            spec=bundle.spec,
+            design=bundle.design,
+            plan=bundle.plan,
+            trace=bundle.traceability,
+        )
+        loop.spec_ref = written.get("spec", loop.spec_ref)
+
+        gate_summaries: dict[str, Any] = {}
+        if auto_gate and not bundle.spec.blocking_questions():
+            phases = ["plan"] if bundle.spec.track == "lite" else ["spec", "design", "plan"]
+            for ph in phases:
+                g_res = self.run_phase_gate(loop, ph)
+                gate_summaries[ph] = g_res.data.get("gate")
+                if g_res.code != OK:
+                    break
+
+        bp_snap = self.blueprint_status(loop)
+        loop.evidence["blueprint"] = {
+            "track": bundle.spec.track,
+            "qualification": bundle.qualification.to_dict(),
+            "synthesized_by": bundle.synthesized_by,
+            "artifacts": written,
+            "phase": bp_snap["phase"],
+            "total_tasks": bp_snap["total_tasks"],
+        }
+        self.ledger.log_event(
+            loop,
+            "blueprint",
+            track=bundle.spec.track,
+            phase=bp_snap["phase"],
+            tasks=bp_snap["total_tasks"],
+            synthesized_by=bundle.synthesized_by,
+        )
+        self.ledger.save(loop)
+
+        if bundle.spec.blocking_questions():
+            return StepResult(
+                WAITING,
+                loop.stage.value,
+                f"Blueprint paused on {len(bundle.spec.blocking_questions())} blocking Open Question(s)",
+                {
+                    "blueprint": loop.evidence["blueprint"],
+                    "open_questions": [q.to_dict() for q in bundle.spec.blocking_questions()],
+                    "status": bp_snap,
+                },
+            )
+        return StepResult(
+            OK,
+            loop.stage.value,
+            f"Blueprint synthesized ({bundle.spec.track} track, {len(bundle.plan.tasks)} TDD task(s), phase={bp_snap['phase']})",
+            {
+                "blueprint": loop.evidence["blueprint"],
+                "gates": gate_summaries,
+                "status": bp_snap,
+            },
+        )
+
+    def run_phase_gate(
+        self,
+        loop: LoopRecord,
+        phase: str,
+        *,
+        force_by: str = "",
+        diff_text: str = "",
+    ) -> StepResult:
+        """Run independent read-only Phase Gate (`spec` | `design` | `plan` | `sdc`)."""
+        norm = phase.strip().lower()
+        if norm == "req":
+            norm = "spec"
+        if norm not in ("spec", "design", "plan", "sdc"):
+            return StepResult(USAGE, loop.stage.value, f"Unknown blueprint gate '{phase}'")
+
+        ws = self.blueprint_workspace(loop.id)
+        spec = ws.load_spec()
+        design = ws.load_design()
+        plan = ws.load_plan()
+        trace = ws.load_traceability()
+        if spec is None or plan is None:
+            return StepResult(USAGE, loop.stage.value, "Initialize Blueprint first (`neo-devops blueprint <loop>`)")
+
+        round_no = plan.gate_rounds(norm) + 1
+        sdc_findings: list[Finding] = []
+        if norm == "spec":
+            rec = BlueprintPhaseGate.verify_spec(spec, round_no=round_no)
+        elif norm == "design":
+            if design is None:
+                return StepResult(USAGE, loop.stage.value, "No `design.md` present (Lite track skips Design Gate)")
+            rec = BlueprintPhaseGate.verify_design(spec, design, round_no=round_no)
+        elif norm == "plan":
+            rec = BlueprintPhaseGate.verify_plan(spec, design, plan, round_no=round_no)
+        else:
+            active_diff = diff_text or str(loop.evidence.get("latest_diff", "")) or diff_against(self.root, loop.base)
+            rec, sdc_findings = BlueprintPhaseGate.verify_sdc(
+                spec, design, plan, trace, diff_text=active_diff, repo_root=self.root, round_no=round_no
+            )
+
+        if force_by.strip() and not rec.passed:
+            rec.passed = True
+            rec.forced_by = force_by.strip()
+
+        plan.gate_records.append(rec)
+        if norm == "sdc" and rec.passed:
+            plan.review_passed = True
+        ws.save(plan=plan)
+
+        snap = self.blueprint_status(loop)
+        if isinstance(loop.evidence.get("blueprint"), dict):
+            loop.evidence["blueprint"]["phase"] = snap["phase"]
+        self.ledger.log_event(
+            loop, "phase_gate", gate=norm, round=round_no, passed=rec.passed, forced_by=rec.forced_by
+        )
+        self.ledger.save(loop)
+
+        payload: dict[str, Any] = {
+            "gate": rec.to_dict(),
+            "status": snap,
+            "sdc_findings": [f.to_dict() for f in sdc_findings],
+        }
+        if rec.passed:
+            return StepResult(OK, loop.stage.value, f"{norm.upper()} Phase Gate PASSED (round {round_no})", payload)
+        if round_no >= 3:
+            self.ledger.escalate(loop, f"{norm.upper()} Phase Gate failed {round_no} rounds; human ruling required")
+            return StepResult(ESCALATED, loop.stage.value, f"{norm.upper()} Phase Gate failed 3 rounds; escalated", payload)
+        return StepResult(
+            GATE_FAILED,
+            loop.stage.value,
+            f"{norm.upper()} Phase Gate FAILED ({len(rec.failed_items())} check(s) failed)",
+            payload,
+        )
+
+    def execute_blueprint_tasks(
+        self,
+        loop: LoopRecord,
+        *,
+        implementer: TaskImplementerBackend | None = None,
+        max_tasks: int | None = None,
+    ) -> StepResult:
+        """Execute ready Blueprint tasks via isolated Context Packs + Red/Green TDD."""
+        ws = self.blueprint_workspace(loop.id)
+        if not ws.exists():
+            return StepResult(USAGE, loop.stage.value, "No Blueprint initialized for this loop")
+
+        if loop.stage == Stage.INTAKE:
+            self.ledger.transition(loop, Stage.BUILD, "Entered BUILD stage via Blueprint TaskTDDController")
+
+        controller = TaskTDDController(
+            implementer=implementer,
+            quality_compiler=QualityStackCompiler(skill_registry=self.skills),
+        )
+        run_sum = controller.run(workspace=ws, repo_root=self.root, max_tasks=max_tasks)
+        # Record isolated subagent session IDs on the loop for Generator-Evaluator attestation
+        plan = ws.load_plan()
+        if plan is not None:
+            for t in plan.tasks:
+                if t.evidence:
+                    for sid in (t.evidence.red_session_id, t.evidence.green_session_id):
+                        if sid and sid not in loop.evidence.setdefault("author_sessions", []):
+                            loop.evidence["author_sessions"].append(sid)
+
+        snap = self.blueprint_status(loop)
+        if isinstance(loop.evidence.get("blueprint"), dict):
+            loop.evidence["blueprint"]["phase"] = snap["phase"]
+            loop.evidence["blueprint"]["passing_tasks"] = snap["passing_tasks"]
+        self.ledger.log_event(
+            loop,
+            "blueprint_tdd",
+            executed=run_sum.executed_tasks,
+            passing=run_sum.passing_tasks,
+            blocked=run_sum.blocked_task,
+        )
+        self.ledger.save(loop)
+
+        payload = {"tdd_run": run_sum.to_dict(), "status": snap}
+        if run_sum.blocked_task:
+            return StepResult(
+                ESCALATED,
+                loop.stage.value,
+                f"Task `{run_sum.blocked_task}` halted: {run_sum.blocker_reason}",
+                payload,
+            )
+        return StepResult(
+            OK,
+            loop.stage.value,
+            f"Executed {len(run_sum.passing_tasks)} task(s); Blueprint phase is now `{snap['phase']}`",
+            payload,
+        )
+
+    def run_acceptance(
+        self,
+        loop: LoopRecord,
+        *,
+        acceptance_cmd: str = "",
+        residual_minors: list[str] | None = None,
+    ) -> StepResult:
+        """Generate black-box `AT-*` cases from `spec.md`, evaluate Go/No-Go, and archive clean specs."""
+        ws = self.blueprint_workspace(loop.id)
+        if not ws.exists():
+            return StepResult(USAGE, loop.stage.value, "No Blueprint initialized for this loop")
+        report = AcceptanceVerifier.run_and_archive(
+            workspace=ws,
+            repo_root=self.root,
+            acceptance_cmd=acceptance_cmd,
+            residual_minors=residual_minors,
+        )
+        snap = self.blueprint_status(loop)
+        if isinstance(loop.evidence.get("blueprint"), dict):
+            loop.evidence["blueprint"]["phase"] = snap["phase"]
+            loop.evidence["blueprint"]["acceptance_verdict"] = report.verdict
+            loop.evidence["blueprint"]["archived_to"] = report.archived_to
+        self.ledger.log_event(
+            loop,
+            "acceptance",
+            verdict=report.verdict,
+            coverage=report.requirement_coverage,
+            archived_to=report.archived_to,
+        )
+        self.ledger.save(loop)
+
+        payload = {"acceptance": report.to_dict(), "status": snap}
+        if report.verdict == "NO_GO":
+            return StepResult(GATE_FAILED, loop.stage.value, "Acceptance verdict NO_GO", payload)
+        return StepResult(
+            OK,
+            loop.stage.value,
+            f"Acceptance {report.verdict} ({report.requirement_coverage:.0%} req coverage); archived to `{report.archived_to}`",
+            payload,
+        )
 
     # ── Stage 2: BUILD (TDD Coding) ───────────────────────────────────────────
 
@@ -864,7 +1177,13 @@ class DevOpsEngine:
                         "carried_over_policy": self.cfg.review.carried_over_policy,
                         "ground_llm_findings": self.cfg.review.ground_llm_findings,
                         "verify_vanished": self.cfg.review.verify_vanished,
+                        "clean_code": self.cfg.review.clean_code,
+                        "sdc_compliance": self.cfg.review.sdc_compliance,
                         "rule_catalog": catalog_summary(),
+                    },
+                    "quality_stack": {
+                        "layers": ["5d-clean-code-floor", "7-rung-minimal-code-ladder", "language-guardrails"],
+                        "supported_languages": sorted(LANGUAGE_STANDARDS.keys()),
                     },
                     "spec_checks": spec_checks,
                 },
@@ -1009,16 +1328,19 @@ class DevOpsEngine:
     def _render_task_brief(self, loop: LoopRecord) -> str:
         skills_line = ", ".join(loop.activated_skills) or "none"
         files_line = ", ".join(loop.files) or "(to be determined)"
+        qstack = self.compile_quality_stack(files=loop.files, stage="build", max_chars=4_500)
         return (
             f"# Task Brief — {loop.id}: {loop.title}\n\n"
             f"- **Risk Tier**: `{loop.tier.value}` | **Mode**: `{loop.mode.value}`\n"
             f"- **Base Branch**: `{loop.base}` | **Spec Ref**: `{loop.spec_ref or 'N/A'}`\n"
             f"- **Touched Files**: {files_line}\n"
-            f"- **Activated Enterprise Skills**: {skills_line}\n\n"
+            f"- **Activated Skills**: {skills_line}\n"
+            f"- **Quality Stack Layers**: {', '.join(qstack.loaded_layers)}\n\n"
             f"## Mandatory Engineering Discipline\n"
             f"1. **TDD**: Write failing test(s) reproducing the requirement/bug BEFORE implementation.\n"
             f"2. **Security**: Enforce input validation, workspace confinement, and zero hardcoded secrets.\n"
-            f"3. **Clean Code**: Explicit type annotations, narrow exception handling, immutable defaults.\n"
+            f"3. **Clean Code**: Explicit type annotations, narrow exception handling, immutable defaults.\n\n"
+            f"{qstack.prompt_markdown}\n"
         )
 
     def _write_review_fix_brief(self, loop: LoopRecord) -> Path:

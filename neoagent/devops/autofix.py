@@ -173,14 +173,25 @@ class NeoAgentCodingBackend:
         workspace_root: Path,
         skill_context: str = "",
     ) -> CodingOutcome:
+        from .standards import QualityStackCompiler
+
         brief = task_brief_path.read_text(encoding="utf-8")
+        qstack = QualityStackCompiler().compile(
+            repo_root=workspace_root,
+            files=loop.files,
+            stage="build",
+            max_chars=6_000,
+        )
+        combined_guardrails = "\n\n".join(p for p in (qstack.prompt_markdown, skill_context) if p)
         sys_prompt = (
             "You are NeoAgent TDD Implementer operating in an isolated session.\n"
             "STRICT RULES:\n"
             "1. Follow RED -> GREEN -> REFACTOR: write failing tests first, then minimal clean code.\n"
             "2. Never hardcode secrets, never use eval/exec/shell=True, never swallow exceptions.\n"
-            f"3. Workspace root: {workspace_root}\n\n"
-            f"{skill_context}"
+            "3. End with a concrete 5D `clean_code_check` (simplicity, reliability, maintainability, "
+            "testability, performance, scope_discipline).\n"
+            f"4. Workspace root: {workspace_root}\n\n"
+            f"{combined_guardrails}"
         )
         return self._run_isolated_agent(
             session_id=f"coder_{loop.id}",
@@ -196,7 +207,16 @@ class NeoAgentCodingBackend:
         round_no: int,
         skill_context: str = "",
     ) -> CodingOutcome:
+        from .standards import QualityStackCompiler
+
         brief = fix_brief_path.read_text(encoding="utf-8")
+        qstack = QualityStackCompiler().compile(
+            repo_root=workspace_root,
+            files=loop.files,
+            stage="review",
+            max_chars=5_000,
+        )
+        combined_guardrails = "\n\n".join(p for p in (qstack.prompt_markdown, skill_context) if p)
         sys_prompt = (
             "You are NeoAgent Surgical Auto-Fixer operating in an isolated session.\n"
             "STRICT ANTI-CHEAT RED LINES:\n"
@@ -205,7 +225,7 @@ class NeoAgentCodingBackend:
             "3. For every bug fixed, ensure a regression test covers it.\n"
             f"4. Workspace root: {workspace_root}\n\n"
             f"{RECEPTION_PROTOCOL}\n\n"
-            f"{skill_context}"
+            f"{combined_guardrails}"
         )
         return self._run_isolated_agent(
             session_id=f"fixer_{loop.id}_r{round_no}",

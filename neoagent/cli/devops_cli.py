@@ -42,6 +42,64 @@ def _emit(args: argparse.Namespace, payload: StepResult | dict[str, Any], human:
         print(f"[{payload.stage}] {payload.message}")
 
 
+_GATE_MARK = {"YES": "PASS", "NO": "FAIL", "WARN": "WARN"}
+
+
+def _blueprint_detail_lines(cmd: str, res: StepResult) -> list[str]:
+    """Human-readable detail block for the blueprint family of commands (empty for other commands)."""
+    data = res.data or {}
+    status = data.get("status") or {}
+    lines: list[str] = []
+    if cmd == "blueprint":
+        bp = data.get("blueprint") or {}
+        qual = bp.get("qualification") or {}
+        lines.append(f"  Track: {str(bp.get('track', '')).upper()}  |  {qual.get('reason', '')}".rstrip(" |"))
+        for rl in qual.get("red_lines_triggered", []):
+            lines.append(f"  Lite red line -> upgraded to FULL: {rl}")
+        for q in data.get("open_questions", []):
+            lines.append(f"  OPEN {q.get('id', '')} [blocking] {q.get('question', '')}")
+        gates = data.get("gates") or {}
+        if gates:
+            chips = "  ".join(f"{ph.upper()} {'PASS' if (g or {}).get('passed') else 'FAIL'}" for ph, g in gates.items())
+            lines.append(f"  Gates: {chips}")
+        for t in status.get("tasks", []):
+            deps = ",".join(t.get("depends_on") or []) or "root"
+            lines.append(f"  {t['id']} [{t['granularity']}/{t.get('model_tier', 'standard')}] after:{deps}  {t['title']}")
+        if status.get("artifacts_dir"):
+            names = ", ".join(sorted(Path(p).name for p in (bp.get("artifacts") or {}).values()))
+            lines.append(f"  Artifacts: {names}")
+    elif cmd == "gate":
+        gate = data.get("gate") or {}
+        for it in gate.get("items", []):
+            mark = _GATE_MARK.get(it.get("verdict", ""), it.get("verdict", ""))
+            tail = f" - {it['evidence']}" if it.get("verdict") != "YES" and it.get("evidence") else ""
+            lines.append(f"  {mark} {it['id']:<4} {it['title']}{tail}"[:150])
+        for f in data.get("sdc_findings", []):
+            lines.append(f"  SDC {f.get('rule', '')} [{f.get('severity', '')}] {f.get('message', '')}"[:150])
+    elif cmd == "next-task":
+        run = data.get("tdd_run") or {}
+        by_id = {t["id"]: t for t in status.get("tasks", [])}
+        for tid in run.get("executed_tasks", []):
+            t = by_id.get(tid, {})
+            lines.append(f"  {tid} {t.get('status', '')}  [{t.get('granularity', '')}] tier={t.get('model_tier', '')}  {t.get('title', '')}"[:150])
+            red, green = t.get("red_session", ""), t.get("green_session", "")
+            if red and green and red != green:
+                lines.append(f"      RED session {red}  ->  GREEN session {green}  (separate contexts)")
+            elif green:
+                lines.append(f"      single fresh session {green}")
+        for pack in run.get("context_packs_written", []):
+            lines.append(f"  Zero-history context pack: {Path(pack).name}")
+        if status.get("total_tasks"):
+            lines.append(f"  Progress: {status.get('passing_tasks', 0)}/{status['total_tasks']} tasks passing")
+    elif cmd == "acceptance":
+        acc = data.get("acceptance") or {}
+        for c in acc.get("cases", []):
+            lines.append(f"  {c.get('status', '')} {c.get('id', '')} ({c.get('req_id', '')}, {c.get('category', '')})  {c.get('scenario_gwt', '')}"[:150])
+        if acc:
+            lines.append(f"  Verdict: {acc.get('verdict', '')}  |  requirement coverage {float(acc.get('requirement_coverage', 0)):.0%}")
+    return lines
+
+
 def build_cli_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="neo-devops",
@@ -114,6 +172,36 @@ def build_cli_parser() -> argparse.ArgumentParser:
     rr_p.add_argument("--round", type=int, default=0, help="Round number (default: latest)")
 
     sub.add_parser("rules", help="List the review rule catalog (rule -> dimension -> standard)")
+
+    bp_p = sub.add_parser(
+        "blueprint",
+        help="Synthesize Spec-to-Code Blueprint (`spec.md`, `design.md`, `tasks.md`, `traceability.md`) & run gates",
+    )
+    bp_p.add_argument("id")
+    bp_p.add_argument("--req", action="append", default=[], help="Explicit requirement item (repeatable)")
+    bp_p.add_argument("--lite", action="store_true", help="Request lightweight track (subject to 6 upgrade red lines)")
+    bp_p.add_argument("--option", default="A", help="Preferred architectural option (A or B)")
+    bp_p.add_argument("--strict-clarify", action="store_true", help="Pause on unquantified ambiguity with OpenQuestions")
+    bp_p.add_argument("--answer", action="append", default=[], help="Answer an OpenQuestion, e.g. OQ-001=p99<=100ms")
+
+    gate_p = sub.add_parser("gate", help="Run independent read-only Blueprint Phase Gate (spec|design|plan|sdc)")
+    gate_p.add_argument("id")
+    gate_p.add_argument("--phase", required=True, choices=["spec", "req", "design", "plan", "sdc"])
+    gate_p.add_argument("--force-by", default="", help="Human override name when adjudicating a gate")
+
+    nt_p = sub.add_parser("next-task", help="Execute ready Blueprint TDD task(s) in isolated Context Packs")
+    nt_p.add_argument("id")
+    nt_p.add_argument("--max-tasks", type=int, default=None, help="Max tasks to execute (default: all ready)")
+    nt_p.add_argument("--scripted", action="store_true", help="Use deterministic scripted TDD verifier")
+    nt_p.add_argument("--test-cmd", default="", help="Optional shell test command for scripted verifier")
+
+    acc_p = sub.add_parser("acceptance", help="Run black-box Acceptance (`AT-*`) from `spec.md` and archive clean specs")
+    acc_p.add_argument("id")
+    acc_p.add_argument("--cmd", default="", dest="acceptance_cmd", help="Optional acceptance test command")
+
+    std_p = sub.add_parser("standards", help="Compile 3-Layer Coding Standards Quality Stack for files & stage")
+    std_p.add_argument("--files", nargs="*", default=[], help="Target source files for language inference")
+    std_p.add_argument("--stage", default="build", help="Lifecycle stage (intake|build|review|pipeline|release)")
 
     app_p = sub.add_parser("approve", help="Record human approval at review / release / full_rollout")
     app_p.add_argument("id")
@@ -282,6 +370,11 @@ def _dispatch_command(args: argparse.Namespace, root: Path) -> int:
         _emit(args, payload, human)
         return 0 if not hits else 2
 
+    if args.cmd == "standards":
+        qstack = eng.compile_quality_stack(files=list(args.files), stage=args.stage)
+        _emit(args, qstack.to_dict(), qstack.prompt_markdown)
+        return 0
+
     if args.cmd == "desktop":
         from ..desktop.launcher import launch_desktop
 
@@ -412,10 +505,36 @@ def _dispatch_command(args: argparse.Namespace, root: Path) -> int:
         res = eng.approve(loop, args.point, args.by, args.note)
     elif args.cmd == "resume":
         res = eng.resume(loop, args.by, Stage(args.to) if args.to else None, args.note)
+    elif args.cmd == "blueprint":
+        answers: dict[str, str] = {}
+        for item in args.answer or []:
+            if "=" in item:
+                k, v = item.split("=", 1)
+                answers[k.strip()] = v.strip()
+        res = eng.blueprint(
+            loop,
+            requirements=list(args.req) if args.req else None,
+            requested_lite=bool(args.lite),
+            selected_option=str(args.option or "A"),
+            clarifications=answers or None,
+            strict_clarify=bool(args.strict_clarify),
+        )
+    elif args.cmd == "gate":
+        res = eng.run_phase_gate(loop, args.phase, force_by=args.force_by)
+    elif args.cmd == "next-task":
+        from ..devops.blueprint import ScriptedTaskImplementer
+
+        impl = ScriptedTaskImplementer(test_command=args.test_cmd) if args.scripted else None
+        res = eng.execute_blueprint_tasks(loop, implementer=impl, max_tasks=args.max_tasks)
+    elif args.cmd == "acceptance":
+        res = eng.run_acceptance(loop, acceptance_cmd=args.acceptance_cmd)
     else:  # pragma: no cover
         raise ValueError(f"Unknown command: {args.cmd}")
 
     _emit(args, res)
+    if not args.json:
+        for line in _blueprint_detail_lines(args.cmd, res):
+            print(line)
     if not args.json and args.cmd == "review" and res.data.get("verdict"):
         att = res.data.get("attribution", {})
         print(

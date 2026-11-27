@@ -111,6 +111,49 @@ try {
     await still("05-protocol");
   }
 
+  // ── Scene 2b: Spec-to-Code Blueprint — synthesize, gate, isolated TDD, S/D/C review, acceptance ──
+  {
+    const rec = new Recorder(page, join(OUT, "blueprint"));
+    const bpText = `document.getElementById("ld-blueprint")?.innerText || ""`;
+    await view("loops");
+    await page.click("#btn-open-new-modal");
+    await page.sleep(400);
+    await typeInto(rec, "#nl-title", "Add tiered volume discount", 3);
+    await page.eval(`document.getElementById("nl-files").value = "app/calculator.py, tests/test_calc.py"`);
+    await typeInto(rec, "#nl-reqs", "Orders of 100+ units get a 10% volume discount; A discount never makes the total negative", 6);
+    await rec.frame(700);
+    await page.click("#btn-create-loop");
+    await page.waitFor(`!document.getElementById("loop-detail").classList.contains("hidden")`);
+    await page.sleep(500);
+    await rec.frame(900);
+    await page.click('[data-laction="blueprint"]');
+    await rec.until(`${loopIdle} && ${bpText}.includes("PLAN")`, 200, 60000);
+    await page.eval(`document.getElementById("ld-blueprint-group").scrollIntoView({block: "start"})`);
+    await page.sleep(500);
+    await rec.frame(2200);
+    await still("12-blueprint-synth");
+    await page.click('[data-bp-act="next_task"]');
+    await rec.until(`${loopIdle} && ${bpText}.includes("GREEN")`, 200, 60000);
+    await page.sleep(500);
+    await rec.frame(1800);
+    await page.click('[data-bp-act="sdc"]');
+    await rec.until(`${loopIdle} && ${bpText}.includes("SDC")`, 200, 60000);
+    await page.sleep(500);
+    await rec.frame(1200);
+    await page.click('[data-bp-act="acceptance"]');
+    await rec.until(`${loopIdle} && ${bpText}.includes("complete")`, 200, 60000);
+    await page.sleep(600);
+    await page.eval(`document.getElementById("ld-blueprint-group").scrollIntoView({block: "start"})`);
+    await page.sleep(400);
+    await rec.frame(2800);
+    rec.save();
+    await still("12-blueprint");
+    await page.eval(`document.querySelector('.artifact[data-art="blueprint/spec.md"]')?.scrollIntoView({block: "center"})`);
+    await page.click('.artifact[data-art="blueprint/spec.md"]');
+    await page.sleep(600);
+    await still("12-blueprint-spec");
+  }
+
   // ── Scene 3: Skill library ───────────────────────────────────────────────────
   {
     const rec = new Recorder(page, join(OUT, "skills"));
@@ -178,6 +221,10 @@ try {
   await view("harness");
   await page.sleep(500);
   await still("11-dark-harness");
+  await view("loops");
+  await page.eval(`document.getElementById("ld-blueprint-group")?.scrollIntoView({block: "start"})`);
+  await page.sleep(500);
+  await still("13-dark-blueprint");
   console.log("capture complete ->", OUT);
 } finally {
   await page.close();

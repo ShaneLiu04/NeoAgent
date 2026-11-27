@@ -9,6 +9,7 @@ description: Top-level index of specs, active changes, architecture, and enginee
 
 ## 1. Architecture (`docs/architecture/` & `docs/`)
 - [`docs/ARCHITECTURE_DEVOPS.md`](ARCHITECTURE_DEVOPS.md) — NeoAgent Studio × Harness L1–L7 & Closed-Loop DevOps System Design
+- [`docs/BLUEPRINT_AND_STANDARDS.md`](BLUEPRINT_AND_STANDARDS.md) — Spec-to-Code Blueprint Engine (`spec.md` → `design.md` → `tasks.md` → Isolated Red/Green TDD → Clean Archive) & 3-Layer Coding Standards Quality Stack
 - [`docs/REVIEW_PROTOCOL.md`](REVIEW_PROTOCOL.md) — Governed Review Protocol: attribution, evidence grounding, independence attestation, triage routing, review records
 - [`docs/AIOPS_PLAYBOOK.md`](AIOPS_PLAYBOOK.md) — AI DevOps engineering handbook
 
