@@ -7,6 +7,7 @@
 * Blueprint  : real ``blueprint`` / ``gate`` / ``next-task`` / ``acceptance`` / ``standards`` sessions
 * Quality    : real ``pytest`` / ``ruff`` / ``privacy-scan`` output of this repository
 * Diagram    : layered architecture, blueprint pipeline and quality-stack infographics
+* Reel       : ``showcase-reel.gif`` — a chaptered tour sampled from all recorded GIFs (``--reel-only``)
 """
 
 from __future__ import annotations
@@ -459,6 +460,78 @@ def build_quality_stack_diagram(path: Path) -> None:
     save_jpg(c.img, path, quality=92)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Showcase reel: one animated overview assembled from the real GIF recordings
+# ══════════════════════════════════════════════════════════════════════════════
+
+# (chip label, caption, source GIF, frames sampled)
+_REEL_SEGMENTS: list[tuple[str, str, str, int]] = [
+    ("Agent 会话", "推理可见、可折叠：按角色路由模型，上下文红线实时可见", "ui-chat.gif", 5),
+    ("交付闭环", "Autopilot：评审拦截 → 修复 → CI 自愈 → 金丝雀 → 反馈回流", "ui-closed-loop.gif", 6),
+    ("需求蓝图", "一句话需求 → spec / design / tasks → 三道只读闸门 → 红绿隔离 TDD", "ui-blueprint.gif", 5),
+    ("需求蓝图", "CLI：合成、闸门、S/D/C 审查、黑盒验收与干净归档", "blueprint-engine.gif", 6),
+    ("规范栈", "三层规范编译进提示词，确定性检视 + 旧侧归因，只追究本次变更", "quality-stack.gif", 5),
+    ("检视协议", "两轮检视：归因、证据、独立性证明，越界修复升级为决策简报", "review-protocol.gif", 5),
+    ("技能库", "三级渐进式披露 + F1–F4 合规校验", "ui-skills.gif", 4),
+    ("治理 L1–L7", "七层健康度、L7 自演进、DORA 指标与隐私扫描", "ui-harness.gif", 4),
+    ("CLI", "同一引擎，终端原生：27 个子命令，--json 机器可读", "cli-devops.gif", 5),
+]
+_REEL_CHIPS = ["Agent 会话", "交付闭环", "需求蓝图", "规范栈", "检视协议", "技能库", "治理 L1–L7", "CLI"]
+
+
+def _gif_frames(path: Path, count: int) -> list[Image.Image]:
+    """Evenly sample ``count`` frames (always including the final, 'result' frame) from an animated GIF."""
+    im = Image.open(path)
+    total = im.n_frames
+    idx = sorted({round(i * (total - 1) / max(count - 1, 1)) for i in range(count)})
+    out: list[Image.Image] = []
+    for i in idx:
+        im.seek(i)
+        out.append(im.convert("RGB"))
+    return out
+
+
+def build_showcase_reel(out: Path) -> None:
+    """Assemble ``showcase-reel.gif``: a chaptered tour of every recorded feature (real frames, with chapter chips)."""
+    W, CONTENT_H, HEAD_H, FOOT_H = 1280, 768, 64, 56
+    H = HEAD_H + CONTENT_H + FOOT_H
+    bg = (244, 245, 250)
+    f_chip, f_cap = font("cjk_bold", 20), font("cjk", 22)
+    chip_w = (W - 48) // len(_REEL_CHIPS)
+
+    def compose(src: Image.Image, active: str, caption: str) -> Image.Image:
+        canvas = Image.new("RGB", (W, H), bg)
+        d = ImageDraw.Draw(canvas)
+        for i, label in enumerate(_REEL_CHIPS):
+            x0 = 24 + i * chip_w
+            on = label == active
+            d.rounded_rectangle([x0 + 4, 14, x0 + chip_w - 4, 50], 18, fill=(28, 28, 30) if on else (255, 255, 255), outline=(216, 219, 230))
+            tw = d.textlength(label, font=f_chip)
+            d.text((x0 + (chip_w - tw) / 2, 20), label, font=f_chip, fill=(255, 255, 255) if on else (120, 124, 140))
+        scale = min(W / src.width, CONTENT_H / src.height)
+        fitted = src.resize((int(src.width * scale), int(src.height * scale)), Image.LANCZOS)
+        canvas.paste(fitted, ((W - fitted.width) // 2, HEAD_H + (CONTENT_H - fitted.height) // 2))
+        tw = d.textlength(caption, font=f_cap)
+        d.text(((W - tw) / 2, HEAD_H + CONTENT_H + 14), caption, font=f_cap, fill=(60, 64, 80))
+        return canvas
+
+    frames: list[Image.Image] = []
+    durs: list[int] = []
+    for chip, caption, gif, count in _REEL_SEGMENTS:
+        path = out / gif
+        if not path.is_file():
+            print(f"  skip reel segment {gif} (missing)")
+            continue
+        _assert_clean([(caption, "")])
+        seg = _gif_frames(path, count)
+        for i, fr in enumerate(seg):
+            full = compose(fr, chip, caption)
+            frames.append(full.resize((1024, round(H * 1024 / W)), Image.LANCZOS))  # keep hero weight reasonable
+            durs.append(1900 if i == len(seg) - 1 else 1000)
+    if frames:
+        save_gif(frames, durs, out / "showcase-reel.gif", colors=96)
+
+
 def build_quality_asset(out: Path) -> None:
     print("[quality] running ruff + pytest + privacy-scan on this repository …")
     from demo_workspace import build_skill_pack
@@ -675,8 +748,12 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=REPO_ROOT / "docs" / "assets")
     ap.add_argument("--skip-cli", action="store_true")
     ap.add_argument("--skip-quality", action="store_true")
+    ap.add_argument("--reel-only", action="store_true", help="only rebuild showcase-reel.gif from the existing GIFs")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
+    if args.reel_only:
+        build_showcase_reel(args.out)
+        return
     if args.ui_frames:
         build_ui_assets(args.ui_frames, args.out)
     if not args.skip_cli:
@@ -688,6 +765,7 @@ def main() -> None:
     build_architecture(args.out / "architecture.jpg")
     build_blueprint_pipeline(args.out / "blueprint-pipeline.jpg")
     build_quality_stack_diagram(args.out / "quality-stack-diagram.jpg")
+    build_showcase_reel(args.out)
 
 
 if __name__ == "__main__":

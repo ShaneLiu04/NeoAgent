@@ -7,14 +7,14 @@ name = "neoagent"
 version = "3.5.0"
 description = "NeoAgent Studio - agentic engineering platform: CLI + desktop app + MCP, reasoning-action harness, closed-loop delivery and Harness L1-L7 governance"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "PolyForm-Noncommercial-1.0.0"}
 requires-python = ">=3.11"
 authors = [{name = "NeoAgent Team"}]
 keywords = ["ai-agent", "llm", "langgraph", "agent-framework", "multi-agent"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]

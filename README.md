@@ -16,9 +16,11 @@
   <img alt="blueprint" src="https://img.shields.io/badge/blueprint%20gates-G1%E2%80%93G15%20%C2%B7%20P1%E2%80%93P6%20%C2%B7%20S%2FD%2FC-ff9f0a?style=flat-square" />
   <img alt="rules" src="https://img.shields.io/badge/review%20rules-60-ff453a?style=flat-square" />
   <img alt="deps" src="https://img.shields.io/badge/control%20plane-zero%20deps-e37bff?style=flat-square" />
+  <img alt="license" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-d73a49?style=flat-square" />
 </p>
 
 <p align="center">
+  <a href="#-演示一览">演示一览</a> ·
   <a href="#-本项目的独特价值">独特价值</a> ·
   <a href="#-功能导览">功能导览</a> ·
   <a href="#-契约化需求分解引擎">需求蓝图</a> ·
@@ -29,11 +31,14 @@
   <a href="#-ai-devops-工程视角">工程视角</a> ·
   <a href="#-与开源方案的关系">开源对照</a> ·
   <a href="#-质量门禁">质量门禁</a> ·
-  <a href="#-路线图">路线图</a>
+  <a href="#-路线图">路线图</a> ·
+  <a href="#-许可证与使用条款">许可证</a>
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero.jpg" alt="NeoAgent Studio — 浅色交付闭环 × 深色 Agent 会话" width="100%" />
+  <img src="docs/assets/showcase-reel.gif" alt="NeoAgent 总览：Agent 会话 → 交付闭环 → 需求蓝图 → 规范栈 → 检视协议 → 技能库 → 治理 → CLI" width="92%" />
+  <br/>
+  <sub>▶ 53 秒看完整个项目：9 段真实录制，按章节切换。<a href="#-演示一览">全部 GIF 一览</a> · <a href="#-功能导览">逐章完整版</a></sub>
 </p>
 
 **NeoAgent Studio** 是一个把 AI 编码纳入工程交付与运维闭环的平台，而不是又一个聊天式编码助手。需求先被落成可验证的契约，再由隔离的红/绿会话逐任务实现；变更经过独立评审、CI 门禁、金丝雀分级发布，线上反馈与回滚信号再聚类、派生为下一轮变更；每一步都写入 SHA-256 哈希链账本。**CLI、桌面 Studio、IDE（MCP）三个入口共享同一个引擎。**
@@ -58,6 +63,75 @@ flowchart LR
 | **契约化需求分解** | 模型对模糊需求“默默脑补”，改完代码才发现理解错了 | 阶段由磁盘产物推导；每个闸门只读、独立、可复跑；不明确就提问，而不是猜 | [功能导览 · 3](#3--需求蓝图--从一句话需求到可追溯的-tdd-任务图) |
 | **隔离式红/绿 TDD** | 同一上下文既写测试又写实现，测的是自己的 bug | RED 与 GREEN 各开独立会话；每个任务只拿到一份零历史简报 | [功能导览 · 3](#3--需求蓝图--从一句话需求到可追溯的-tdd-任务图) |
 | **三层代码规范栈** | “请写干净代码”无法度量，评审与生成标准不一致 | 同一套标准既编译进提示词，又被确定性检视器强制执行，并只追究本次变更的责任 | [功能导览 · 4](#4--三层代码规范栈--把规范变成可执行的约束) |
+
+---
+
+## ▶ 演示一览
+
+下面 10 段 GIF 就是整个项目的“可运行证据”：全部由本地真实运行录制（合成仓库驱动真实的 Studio 前端与 `neo-devops` CLI，AI 编码环节用确定性离线替身，其余均为真实执行结果）。点标题跳到对应章节看逐步讲解。
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<b><a href="#1--agent-会话--推理可见过程可折叠">① Agent 会话</a></b> · Studio · ⏱ 11s<br/>
+<sub>推理可见、可折叠，按角色路由模型，上下文红线实时可见</sub><br/>
+<img src="docs/assets/ui-chat.gif" alt="Agent 会话：流式推理与折叠" width="100%" />
+</td>
+<td width="50%" valign="top">
+<b><a href="#2--交付闭环--autopilot-自愈到金丝雀全量">② 交付闭环</a></b> · Studio · ⏱ 26s<br/>
+<sub>评审拦截 → 自动修复 → CI 自愈 → 金丝雀 → 反馈派生 HOTFIX</sub><br/>
+<img src="docs/assets/ui-closed-loop.gif" alt="交付闭环：Autopilot 自愈与反馈派生" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<b><a href="#3--需求蓝图--从一句话需求到可追溯的-tdd-任务图">③ 需求蓝图 · CLI</a></b> · ⏱ 25s<br/>
+<sub>合成 spec / design / tasks，三道闸门，红绿隔离 TDD，S/D/C 审查，验收归档</sub><br/>
+<img src="docs/assets/blueprint-engine.gif" alt="需求蓝图：合成、阶段门禁、隔离式红绿 TDD、S/D/C 审查、验收归档" width="100%" />
+</td>
+<td width="50%" valign="top">
+<b><a href="#3--需求蓝图--从一句话需求到可追溯的-tdd-任务图">④ 需求蓝图 · Studio</a></b> · ⏱ 24s<br/>
+<sub>门禁徽章、任务 DAG、RED → GREEN 会话 ID 一屏可见</sub><br/>
+<img src="docs/assets/ui-blueprint.gif" alt="Studio 需求分解与阶段门禁面板" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<b><a href="#3--需求蓝图--从一句话需求到可追溯的-tdd-任务图">⑤ 蓝图护栏</a></b> · CLI · ⏱ 20s<br/>
+<sub>strict-clarify 暂停提问并折回答案；Lite 六条红线强制升级</sub><br/>
+<img src="docs/assets/blueprint-guardrails.gif" alt="蓝图护栏：strict-clarify 与 Lite 红线" width="100%" />
+</td>
+<td width="50%" valign="top">
+<b><a href="#4--三层代码规范栈--把规范变成可执行的约束">⑥ 三层规范栈</a></b> · CLI · ⏱ 20s<br/>
+<sub>规范编译进提示词；确定性检视 + 旧侧归因，只追究本次变更</sub><br/>
+<img src="docs/assets/quality-stack.gif" alt="三层代码规范栈" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<b><a href="#5--检视协议--归因证据与分流">⑦ 检视协议</a></b> · CLI · ⏱ 22s<br/>
+<sub>两轮检视：归因、证据、独立性证明，越界修复升级为决策简报</sub><br/>
+<img src="docs/assets/review-protocol.gif" alt="治理型检视协议" width="100%" />
+</td>
+<td width="50%" valign="top">
+<b><a href="#6--技能库--三级渐进式披露">⑧ 技能库</a></b> · Studio · ⏱ 14s<br/>
+<sub>三级渐进式披露，一键 F1–F4 合规校验</sub><br/>
+<img src="docs/assets/ui-skills.gif" alt="技能库：渐进式加载与 F1–F4 校验" width="100%" />
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<b><a href="#7--治理与合规--七层健康度一屏可见">⑨ 治理与合规</a></b> · Studio · ⏱ 16s<br/>
+<sub>L1–L7 健康度、L7 自演进、DORA 指标与隐私扫描</sub><br/>
+<img src="docs/assets/ui-harness.gif" alt="治理与合规：L1–L7" width="100%" />
+</td>
+<td width="50%" valign="top">
+<b><a href="#8--cli--同一引擎终端原生">⑩ CLI</a></b> · ⏱ 27s<br/>
+<sub>同一引擎终端原生：初始化 → 建环 → 评审拦截 → 技能 → 治理 → 账本校验</sub><br/>
+<img src="docs/assets/cli-devops.gif" alt="neo-devops CLI 真实会话" width="100%" />
+</td>
+</tr>
+</table>
 
 ---
 
@@ -99,7 +173,7 @@ flowchart LR
 
 > 以下素材均由本地真实运行录制：合成的 `payment-gateway` 演示仓库 + 15 项中性技能，驱动真实的 Studio 前端与 `neo-devops` CLI。为保证可复现，AI 编码环节由确定性的离线替身完成（不依赖模型 API Key；蓝图用确定性合成器，TDD 用 `--scripted` 验证器），评审、门禁、流水线、金丝雀、账本与判决全部是真实执行的结果（见 [复现展示素材](#-复现展示素材)）。
 >
-> **快速导航：** [1 Agent 会话](#1--agent-会话--推理可见过程可折叠) · [2 交付闭环](#2--交付闭环--autopilot-自愈到金丝雀全量) · [3 需求蓝图](#3--需求蓝图--从一句话需求到可追溯的-tdd-任务图) · [4 规范栈](#4--三层代码规范栈--把规范变成可执行的约束) · [5 检视协议](#5--检视协议--归因证据与分流) · [6 技能库](#6--技能库--三级渐进式披露) · [7 治理](#7--治理与合规--七层健康度一屏可见) · [8 CLI](#8--cli--同一引擎终端原生)
+> **快速导航（全部 GIF 缩略浏览见 [演示一览](#-演示一览)）：** [1 Agent 会话](#1--agent-会话--推理可见过程可折叠) · [2 交付闭环](#2--交付闭环--autopilot-自愈到金丝雀全量) · [3 需求蓝图](#3--需求蓝图--从一句话需求到可追溯的-tdd-任务图) · [4 规范栈](#4--三层代码规范栈--把规范变成可执行的约束) · [5 检视协议](#5--检视协议--归因证据与分流) · [6 技能库](#6--技能库--三级渐进式披露) · [7 治理](#7--治理与合规--七层健康度一屏可见) · [8 CLI](#8--cli--同一引擎终端原生)
 
 ### 1 · Agent 会话 —— 推理可见、过程可折叠
 
@@ -202,6 +276,10 @@ L1–L7 实时健康卡片；一键补齐四层 AI 原生文档骨架；L7 自�
 </details>
 
 ### 截图画廊
+
+<p align="center">
+  <img src="docs/assets/hero.jpg" alt="NeoAgent Studio — 浅色交付闭环 × 深色 Agent 会话" width="92%" />
+</p>
 
 | 浅色 | 深色 |
 |---|---|
@@ -606,6 +684,7 @@ python scripts/showcase/make_assets.py --ui-frames out/    # 合成 GIF / JPG / 
 | 素材 | 生成脚本 | 内容 |
 |---|---|---|
 | `ui-*.gif` / `ui-*.jpg` / `hero.jpg` | `capture_ui.mjs` → `make_assets.py` | 真实 Studio 前端的录制帧与静态截图 |
+| `showcase-reel.gif` | `make_assets.py --reel-only` | 首屏总览：从上面各段真实 GIF 中等距抽帧并加章节标签合成（先有各段 GIF 再合成） |
 | `cli-devops.gif` / `.jpg` | `cli_story.py::run_story` | 闭环 CLI 会话 |
 | `review-protocol.gif` / `.jpg` | `cli_story.py::run_review_story` | 两轮检视：归因、修复、决策简报、检视记录 |
 | `blueprint-engine.gif` / `.jpg` | `cli_story.py::run_blueprint_story` | 需求蓝图全程：合成 → 三道闸门 → 隔离式红绿 TDD → S/D/C → 验收归档 |
@@ -653,6 +732,30 @@ docs/              # 架构文档与展示素材
 | P1 | S/D/C 发现回流 Autopilot：越界改文件、接口缺失自动生成返工简报并重置到受影响阶段 | 蓝图与自愈闭环完全打通 |
 | P1 | policy-as-code 审批规则 · 回滚事件时间线与根因关联 | 合规可维护 · 缩短 MTTR |
 | P2 | in-toto / SLSA 出处声明 + SBOM · Studio 多用户 | 供应链合规 · 团队平台 |
+
+---
+
+## ✦ 许可证与使用条款
+
+NeoAgent Studio 采用 **[PolyForm Noncommercial License 1.0.0](LICENSE)**：源码公开可读，**仅允许非商业用途**。这是一种"源码可见、禁止商用"的许可证，**不是 OSI 认证的开源许可证**（OSI 定义的开源允许商业使用）。
+
+| 允许（非商业用途） | 禁止 |
+|---|---|
+| 阅读、学习、研究、个人与内部测试、爱好项目 | 任何商业用途：营利产品或服务、付费交付、对外收费的托管服务、把代码或衍生物纳入商业产品 |
+| 教育、科研、公益、医疗、环保与政府机构等非营利用途 | 删除或篡改版权声明与 `Required Notice`（即违反分发条件），或把本项目冒充为自己的作品发布 |
+| 修改，并以非商业目的分发修改版本 | 再授权：把许可转让或再授权给第三方 |
+
+- **分发时必须附带** [`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE)，且所有源文件的版权信息保持完整。版权行如下：
+
+  ```text
+  Required Notice: Copyright (c) 2026 NeoAgent Dev
+  ```
+
+- **违规后果：** 收到书面通知后 32 天内未停止违规并纠正，许可自动终止（见 LICENSE 的 *Violations* 条款）。
+- **商业授权：** 如需用于商业用途，请联系版权持有人 NeoAgent Dev，取得单独的书面商业许可。
+- **免责：** 软件按"原样"提供，不附带任何担保（见 LICENSE 的 *No Liability* 条款）。
+
+> 本节是对 LICENSE 原文的摘要。若与 LICENSE 有任何冲突，以 LICENSE 原文为准；本节不构成法律意见。
 
 ---
 
